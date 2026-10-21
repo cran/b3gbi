@@ -1,0 +1,90 @@
+#' Create an sf object from UTM coordinates, handling multiple zones correctly.
+#'
+#' This function takes a data frame with UTM coordinates (xcoord, ycoord) and a
+#' utmzone column, and creates an sf object with the correct CRS for each zone.
+#'
+#' @param df A data frame with numeric columns `xcoord` (easting), `ycoord`
+#'  (northing) and `utmzone`, and a character column `hemisphere` (`"S"` for
+#'  the southern hemisphere; any other value is treated as northern).
+#' @param output_crs (Optional) The EPSG code or CRS string for the desired
+#'  output CRS. If NULL, the CRS of the first UTM zone will be used.
+#'
+#' @return A single sf object, with the points of each zone transformed to
+#'  `output_crs`.
+#'
+#' @examples
+#' \donttest{
+#' df <- data.frame(
+#'   xcoord = c(500000, 501000),
+#'   ycoord = c(5600000, 5601000),
+#'   utmzone = c(32, 32),
+#'   hemisphere = c("North", "North")
+#' )
+#' sf_obj <- create_sf_from_utm(df, output_crs = "EPSG:4326")
+#' }
+#'
+#' @export
+create_sf_from_utm <- function(df, output_crs = NULL) {
+
+  utmzone <- NULL
+
+  # 1. Input Validation
+  required_cols <- c("xcoord", "ycoord", "utmzone", "hemisphere")
+  if (!all(required_cols %in% names(df))) {
+    stop(paste0("Input data frame must contain columns:",
+                paste(required_cols, collapse = ", ")))
+  }
+  if (!is.numeric(df$xcoord) ||
+      !is.numeric(df$ycoord) ||
+      !is.numeric(df$utmzone)) {
+    stop("xcoord, ycoord, and utmzone columns must be numeric.")
+  }
+
+  # 2. Split data by UTM zone
+  df_list <- df %>%
+    dplyr::group_split(utmzone)
+
+  # 3. Create sf objects for each zone
+  sf_list <- lapply(df_list, function(zone_df) {
+    zone <- unique(zone_df$utmzone)
+    if (any("S" %in% zone_df$hemisphere)) {
+      sf_zone <- sf::st_as_sf(zone_df, coords = c("xcoord", "ycoord"),
+                              crs = sprintf("EPSG:327%02d", as.integer(zone)))
+    } else {
+      sf_zone <- sf::st_as_sf(zone_df, coords = c("xcoord", "ycoord"),
+                              crs = sprintf("EPSG:326%02d", as.integer(zone)))
+    }
+
+    sf::st_agr(sf_zone) <- "constant" # Set attribute to constant
+
+    return(sf_zone)
+
+  })
+
+  # 4. Determine output CRS
+  if (is.null(output_crs)) {
+    # If the input was empty, sf_list will be empty.
+    if (length(sf_list) > 0) {
+      output_crs <- sf::st_crs(sf_list[[1]])
+    }
+  }
+
+  # 5. Transform to a common CRS and combine
+  if (length(sf_list) > 0) {
+    combined_sf <- sf::st_transform(sf_list[[1]], crs = output_crs)
+    sf::st_agr(combined_sf) <- "constant" # Set attribute to constant
+    if (length(sf_list) > 1) {
+      for (i in 2:length(sf_list)){
+        sf_list[[i]] <- sf::st_transform(sf_list[[i]], crs = output_crs)
+        sf::st_agr(sf_list[[i]]) <- "constant" # Set attribute to constant
+        combined_sf <- rbind(combined_sf, sf_list[[i]])
+      }
+    }
+  } else {
+    combined_sf <- sf::st_sf(geometry = sf::st_sfc())
+    sf::st_agr(combined_sf) <- "constant" # Set attribute to constant
+  }
+
+  return(combined_sf)
+
+}

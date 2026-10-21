@@ -1,0 +1,472 @@
+# b3gbi 1.1.3
+
+* Tests: a platform-dependent ISEA3H (hexagonal grid) integration test is no longer run on CRAN.
+
+# b3gbi 1.1.2
+
+## Housekeeping
+
+* The developer-only functions that edited the indicator registry inside the installed package directory were removed from the package (they are kept in `data-raw/` for maintainers). The package no longer contains any code that writes to the package directory, the working directory or the user's home filespace (CRAN policy).
+
+# b3gbi 1.1.1
+
+## Housekeeping
+
+* Removed functions that had been copied from other packages ('boot', 'scales', 'cli', 'rlang', 'grid', 'patchwork', 'vegan', 'occUncertain'). Most were unused; `plot_ts()` and the species plots now call `scales::breaks_pretty()` and `patchwork::plot_annotation()` directly, and an internal helper is rewritten. 'labeling' and 'permute' are no longer imported.
+* The taxonomic distinctness examples print a message instead of failing when GBIF cannot be reached.
+* `check_crs_units()` is now fully internal (no help page).
+
+# b3gbi 1.1.0
+
+## Housekeeping and bug fixes
+
+* **Fixed hexagonal (ISEA3H) grids on systems whose PROJ cannot invert `+proj=isea`** (PROJ < 9.5 and many Windows builds) when `dggridR` is not installed. The native fallback only checked the forward transformation, so the hexagons could not be transformed back and maps came out empty ("No spatial intersection between map data and grid"). It now checks the round trip and uses a local Lambert azimuthal equal-area projection when needed.
+* DESCRIPTION: rewritten package description; removed the `Remotes` field (all non-CRAN packages are optional and listed in `Additional_repositories`).
+* Examples: all examples now run (slower map examples in `\donttest{}`), except the taxonomic distinctness examples, which need the GBIF API. Several examples were fixed (`prepare_indicator_bootstrap()`, `calc_ci()`, `replace_na()`, `sum_by_taxon()`).
+* Tests: slow tests are skipped on CRAN (total test time about 1.5 minutes), and `plot_mv()` tests are skipped when `mapview` is not installed.
+
+## Optional dubicube (cube-level bootstrapping)
+
+* **`dubicube` moved from Imports to Suggests.** b3gbi can now be installed without packages from outside CRAN. Cube-level bootstrapping still uses `dubicube`, which remains the recommended way to calculate confidence intervals.
+* **New default `bootstrap_level = "auto"` in `add_ci()`.** It uses cube-level bootstrapping (`dubicube`) when that package is installed and falls back to indicator-level bootstrapping otherwise, with a message (shown once per session) explaining how to install `dubicube` from R-universe. Asking explicitly for `bootstrap_level = "cube"` without `dubicube` stops with installation instructions. Hill numbers use the indicator level under `"auto"` without a warning, as their confidence intervals come from `iNEXT`.
+* The bootstrap level that was used is stored in the new `ci_method` element of the indicator object and shown by `print()`.
+* Vignettes updated to explain how to install `dubicube` and what `"auto"` does.
+
+## Taxonomic distinctness via rgbif (taxize removed)
+
+* **Taxonomic distinctness no longer uses `taxize`** (and therefore no longer needs the non-CRAN packages `taxize`, `bold`, `wikitaxa` and `WikidataR`). Classifications are now retrieved from GBIF with `rgbif` (in Suggests):
+  * All taxa in a cube are looked up together in one call by their GBIF taxon key, instead of one request per species name. Results are **cached for the rest of the R session**, so calculating another indicator from the same cube (e.g. a map after a time series) does not query GBIF again.
+  * Numeric taxon keys are looked up in the GBIF Backbone Taxonomy and alphanumeric keys in the Catalogue of Life eXtended Release (COL XR), so cubes using either taxonomy are supported. Taxa that cannot be found by key are retried by scientific name; any still unresolved are excluded, with a warning.
+  * Because taxa are looked up by key, the `rows` argument of `tax_distinct_map()`/`tax_distinct_ts()` and the `set_rows` argument of `calc_ts.tax_distinct()` are deprecated and ignored.
+* **Taxonomic distinctness calculation:**
+  * The number of taxonomic levels is now fixed at L = 7 (kingdom to species) instead of being recalculated for each cell or year, so values are comparable across cells and years.
+  * Taxa are compared from the top of the hierarchy down using GBIF keys, so homonyms in different higher taxa (e.g. the same genus name in animals and plants) are no longer treated as related.
+  * Pairwise distances are calculated with vectorised matrix operations instead of a loop over species pairs.
+
+## MGRS conversion without the mgrs package
+
+* **Removed the dependency on the non-CRAN package `mgrs`.** MGRS grid codes are now converted to UTM coordinates by an internal pure-R function (`mgrs_to_utm()`), written from the MGRS specification. It gives identical results to `mgrs::mgrs_to_utm()` for over 100,000 test codes worldwide at all precisions (100 km to 1 m), including the Norway and Svalbard special zones. Invalid codes and polar (UPS) codes return `NA` with a single summary warning.
+* The resolution of MGRS cubes is now worked out from the number of digits in the codes, so it is also correct for single-digit UTM zones.
+
+## Indicator corrections
+
+**Indicator corrections. Values of the affected indicators will change.**
+
+* **Evenness (`pielou_evenness_*`, `williams_evenness_*`)**: The evenness calculations now use the number of species actually observed in each grid cell or year. Previously, species absent from a cell or year were counted towards the total number of species. This biased evenness downwards, most strongly in species-poor cells and years. Evenness is now `NA` when fewer than two species are present, since it is undefined there.
+* **Williams' evenness for perfectly even communities**: floating-point rounding could make Williams' evenness `NA` (or very slightly below 1) when all species were equally common, depending on the number of species. It is now exactly 1 in that case.
+* **Abundance-based rarity time series (`ab_rarity_ts`)**: relative abundance is now calculated separately for each year, and each species contributes once per year. Previously, proportions were pooled over all years and each species' rarity was added once for every grid cell it occupied, which inflated the values of widespread species.
+* **Area-based rarity time series (`area_rarity_ts`)**: occupancy (the proportion of occupied grid cells) is now calculated separately for each year. Previously it was pooled over all years. The yearly value is still the mean over grid cells of the summed species rarity.
+* Indicator-level confidence intervals for both rarity indicators (`calc_ci.ab_rarity`, `calc_ci.area_rarity`) use the same corrected definitions.
+* **Confidence intervals**: `add_ci()` (cube level) now gives `NA` confidence limits for years where the bootstrap distribution is undefined or constant (e.g. evenness with a single species), instead of failing. In the indicator-level evenness CI code, confidence intervals are now always matched to the correct year.
+* Updated the documentation of evenness and rarity to describe exactly how S, proportions and occupancy are calculated for maps and time series.
+* Removed a stray `print()` from the taxonomic distinctness calculation; `replace_na()` now reports with `message()` instead of `print()`.
+* Added hand-computed tests for the evenness and rarity definitions.
+
+## Bug fixes
+
+* `create_sf_from_utm()` now builds correct EPSG codes for UTM zones 1-9, so MGRS cubes in those zones are placed correctly.
+* `add_ci(ci_type = "none")` no longer errors.
+* Indicator-level bootstrapping now respects `confidence_level` and `seed`.
+* `completeness_ts(gridded_average = TRUE)` now works.
+* `plot_map()` now applies `layer_colours` and `grid_fill_colour`.
+* `plot_mv()` now passes `...` to `mapview`.
+* `process_cube()` now reports the correct (positive) number of rows removed for missing cell codes.
+* Documentation corrections throughout.
+
+# b3gbi 1.0.1 - Bug fix
+
+* **Fixed EEA grid code conversion for most cell sizes.** The fix in 0.9.3 (multiply the numbers in a code by 1,000 for any km grid and use them unchanged for m grids) was only correct for 1 km, 2 km and 5 km grids; 10 km and 100 km cubes (and 100 m, 250 m cubes) were placed in the wrong location. Before 0.9.3, multiplying by the cell size was correct for 1, 10 and 100 km but wrong for 5 km. Codes are now converted with the EEA/INSPIRE naming rule: the numbers are the coordinates in metres divided by 10^n, where n is the number of trailing zeros of the cell size in metres (e.g. `10kmE510N293` -> 5,100,000 / 2,930,000 m; `5kmE5100N2930` -> 5,100,000 / 2,930,000 m; `100mE51052N29336` -> 5,105,200 / 2,933,600 m). Non-standard codes that already contain full metres are still recognised, with a warning.
+
+# b3gbi 1.0.0 - First official release version
+
+*The package has completed the review process for the Journal of Open Source Software and is now moving from pre-release to the first official release version.
+
+# b3gbi 0.9.4 - Minor update (JOSS Review Fixes):
+
+* **Added package contributors**: Updated `Authors@R` in `DESCRIPTION` to list Ward Langeraert and Peter Desmet as contributors (`role = "ctb"`) (#142).
+* **Tracked Montenegro bryophytes example dataset**: Added `inst/extdata/montenegro_bryophytes_cube_eea.csv` to git tracking so package examples run out of the box (#145).
+* **Fixed paper rendering**: Added blank lines before bulleted lists in `paper.md` for clean PDF rendering (#144).
+* **Added tutorial link to vignette**: Added link to the B-Cubed GBIF cube download tutorial in the "Getting Started" vignette (#146).
+* **Added examples for exported functions**: Added `@examples` roxygen documentation blocks for `add_ci()`, `calc_ci()`, `create_sf_from_utm()`, `mgrs_to_latlong_bbox()`, and `plot_mv()` (#147).
+* **Code health and goodpractice updates**: Added `add = TRUE` to all `on.exit()` calls, updated `print` methods to invisibly return input objects (`invisible(x)`), and removed unused internal function `get_legend_title()` (#143).
+* **Configured Codecov coverage threshold**: Updated `codecov.yml` with a 1% threshold allowance.
+
+# b3gbi 0.9.3 - Minor update:
+
+* **Fixed EEA grid coordinate parsing**: Corrected a bug where coordinate values in EEA grid codes for some resolutions (e.g., 5km) were erroneously multiplied by their resolution values instead of a fixed 1,000. Grid coordinates are now properly extracted based on km vs. m specification in the EEA standard.
+* **Fixed coord_range bounds for grids**: Addressed a cosmetic issue where bounding boxes generated from grid data incorrectly added the raw resolution unit to coordinates, instead of correctly converting to meters first.
+
+# b3gbi 0.9.2 - Minor update:
+* **Fixed add_ci() crash for completeness and relative_occupancy**: Corrected the exclusion list (`noci_list`) in `add_ci()` to replace `"coverage"` with `"completeness"` and add `"relative_occupancy"`. This ensures these unsupported indicators warn and return cleanly instead of throwing a fatal error.
+* **Improved uncertainty calculation documentation**: Fully documented the uncertainty calculations (or reasons for exclusion) for all indicators outside the scope of `add_ci()`, including observed species richness, richness density, sample completeness, relative occupancy, cumulative richness, turnover, and taxonomic distinctness.
+
+# b3gbi 0.9.1 - Minor update:
+
+* **Support for Alphanumeric/String-Based Taxonomic Keys**: Excluded key columns (`kingdomKey`, `familyKey`, `speciesKey`) from numeric coercion in `process_cube()`. This ensures compatibility with GBIF's new taxonomic backbone migrating to the Catalogue of Life (COL), which uses alphanumeric string keys (e.g., `kingdomKey = "N"`) instead of integer keys.
+* **Type Safety for downstream calculations**: Modified `add_ci()` and empty fallback data structures in `calc_ts_methods.R` to support and preserve character-type `taxonKey` values, preventing mismatches or coercion warnings during diversity and uncertainty estimation.
+* **Enhanced Species Search in Plotting**: Updated `plot_species_map()` and `plot_species_ts()` to correctly match and look up alphanumeric/string keys against `taxonKey` instead of fallback matching to `scientificName`.
+* **Cleaned up tests**: Suppressed expected `iNEXT` presence-absence input format warnings in unit tests to ensure R CMD check compliance.
+
+# b3gbi 0.9.0 - Major update:
+
+* Confidence intervals are no longer calculated in the core indicator workflow, except for Hill diversity (Hill diversity is handled by the iNEXT package, which calculates confidence intervals internally). They are now calculated using a separated function, add_ci(), which can be applied to any indicator_ts object for which reasonable confidence intervals can be calculated. This gives the user more freedom. After adding CIs, you can recalculate with different parameters by setting 'replace = TRUE' when you call add_ci().
+* **Indicator-specific bootstrap defaults**: add_ci() now applies different default behaviors based on indicator type to ensure statistically appropriate confidence intervals:
+  - Species-level incidence indicators (`spec_occ`, `spec_range`) and aggregate indicators (evenness, rarity, density) use whole-cube bootstrapping to correctly capture changes in species composition.
+  - Raw counting indicators (`total_occ`) use group-specific bootstrapping (resampling strictly within each specific year).
+  - Evenness indicators (`pielou_evenness`, `williams_evenness`) automatically apply logit transformation to keep confidence intervals within valid [0,1] bounds
+  - Total occurrences (`total_occ`) has bias correction disabled by default
+* Bootstrapping for confidence intervals is now done across the entire cube by default. This uses the dubicube package, which is now added as a dependency. The option to calculate at indicator level is still available by setting 'level = "indicator"' when calling add_ci(). Indicator level bootstrapping is a faster but less robust method.
+* The default number of bootstrap replicates when calculating confidence intervals is now 1000. This improves robustness at the sake of speed. This can still be changed using the 'num_bootstrap' parameter when calling add_ci().
+* Added `boot_args` and `ci_args` parameters to `add_ci()` to allow fine-tuning of the underlying `dubicube` calls. These can be used to override the indicator-specific defaults if needed.
+* Implemented `group_specific` vs `whole_cube` resampling logic in `add_ci()` to handle different indicator calculation requirements. Species-level indicators are automatically detected and handled appropriately.
+* Added new internal helper function `prepare_indicator_bootstrap()` to centralize bootstrap parameter configuration. This function implements a "rule book" pattern that defines appropriate defaults for each indicator type.
+* Included detailed bootstrap summary statistics (`est_boot`, `se_boot`, `bias_boot`) in the output of `add_ci()`.
+* Added a new conceptual vignette: "Uncertainty in Biodiversity Indicators".
+* Added comprehensive unit and integration tests for the decoupled uncertainty workflow.
+
+# b3gbi 0.8.21 - Minor update:
+
+* Added FAIR_MAPPING.md to describe how output columns map to standardized naming conventions for FAIR compliance.
+* Added Zenodo archive badge with DOI to Readme.md.
+
+# b3gbi 0.8.20 - Minor update:
+
+* Fixed a bug in `my_estimateD` where calculating Shannon diversity (q=1) crashed with NA/NaN argument for cells with single sampling units or where all species were observed in all units.
+* Fixed a bug in `create_native_grid` and `compute_indicator_workflow` where coordinate building crashed with `!anyNA(x) is not TRUE` if native grid resolution was missing or grid codes did not carry resolution prefixes (e.g. EEA grids). Added 1km and 1000m resolution fallbacks.
+* Moved `bit64` and `patchwork` dependencies to `Suggests` to minimize imports and avoid CRAN warnings. Added dynamic namespace checking for `patchwork` in `plot_species_map()` and `plot_species_ts().`
+* Systematically downsampled large Denmark mammals datasets in `inst/extdata` to reduce installed package size to CRAN limits (< 5MB) while preserving full year distribution for unit tests.
+
+# b3gbi 0.8.19 - Minor update:
+
+* Added relative occupancy indicator access using `relative_occupancy_ts()` and `relative_occupancy_map()`. There are three different types which can be set using e.g. `occ_type = 0` (one of 0,1,2).
+* Removed redundant `process_cube_old()` function as no longer supported.
+* `process_cube()` now retains yearMonth or yearMonthDay columns so they can be used downstream instead of removing them after conversion to year.
+* Fixed a bug in `add_ne_layer` where country borders disappeared below approximately 40–50°N on European maps. The `group_by/reframe/st_crop` pattern was collapsing individual country geometries into grouped features, destroying borders in the overlay layer.
+* Fixed a bug in `eea_code_to_coords` where coordinate parsing applied an incorrect scaling factor for meter-based EEA grid resolutions, causing a ~10° spatial misalignment of grid cells.
+* Fixed a bug in `create_native_grid` where resolution parsing failed for meter-based resolutions (e.g. "250m") because it only handled the "km" suffix.
+* Fixed a bug in `compute_indicator_workflow` where `st_intersection` of grid cells with land boundaries could produce fragmented polygons for the same cell, resulting in duplicate rows and visual rendering artifacts. Fragments are now reunited per cell code.
+* Improved robustness of `get_ne_data` by adding geometry precision management (`st_set_precision`), defensive `tryCatch` blocks, and spatial filtering to prevent GEOS `TopologyException` errors during map data retrieval.
+* Improved robustness of `compute_indicator_workflow` with additional NULL checks, fallback logic for bounding box calculations, and defensive error handling for spatial intersection operations.
+
+# b3gbi 0.8.18 - Minor update:
+
+* Addressed `S2` geometry degenerate vertex errors related to incorrect geographic subset orientations for exact-matching map boundary points.
+* Added native sf boundaries for MGRS, EEA, and EQDGC, vastly improving boundary and grid visualization.
+* Added function to replace NA values with zeroes in a calculated indicator map or time series. Example: x_filled <- replace_na(x).
+* Removed redundant plotting parameters `complete_grid_outline` and `visible_grid_outline` from `plot_map` and `plot_species_map`.
+* Fixed a bug introduced in version 0.8.0 where `compute_indicator_workflow` produced erroneous empty cell lines for certain bounding boxes across MGRS, EEA, and EQDGC datasets by correcting spatial matching workflows to rely on native `cellCode` joins.
+* Fixed a bug where Hill diversity calculated confidence intervals even when `ci_type` was set to `none`.
+* Fixed a bug where topology exceptions were causing indicator calculations to fail for some cubes.
+* Fixed a bug where aggregating to a larger grid size than the native cube grid gave incorrect output by leaving the original cell codes intact.
+
+# b3gbi 0.8.17 - Minor update:
+
+* Fixed error that prevented rnaturalearth layers from downloading.
+* Revert a previous update that mistakenly turned off polygon intersects for all except ISEA3H grids.
+* Added sum_by_taxon() function to summarize the number of occurrences by taxon at a user-chosen rank in a processed_cube object.
+
+# b3gbi 0.8.16 - Minor update:
+
+* Added support for ISEA3H hexagonal grids
+* Added 'filter_outliers' option to plot_map() and plot_species_map) functions. Use it to remove geographical outliers. Use this if your plot covers a larger geographical area than you expected..
+
+# b3gbi 0.8.15 - Minor update:
+
+* Added new indicator 'species richness density' which calculates the density of unique species per square kilometer.
+* Added wrapper functions `spec_richness_density_map()` and `spec_richness_density_ts()`.
+* Added new indicator 'completeness' which estimates the proportion of the total individuals in an ecological community that belong to the species detected in the sample.
+* Added wrapper functions `completeness_map()` and `completeness_ts()`.
+* Added unit tests for species richness density and completeness.
+
+# b3gbi 0.8.14 - Minor update:
+
+* Fixed a bug in `pielou_evenness_map` where use of a `cell_size` larger than the native cube resolution caused a crash due to non-unique row identifiers during pivoting (#102).
+* Updated `print.indicator_map` to filter out rows with NA `diversity_val` to reduce console clutter.
+* Verified that `cellCode` is correctly preserved in the output of all `calc_map` functions.
+* Added unit tests to verify the presence of `cellCode` and absence of NA clutter in printed output.
+
+# b3gbi 0.8.13 - Minor update:
+
+* Fixed issues with spatial intersection for Australia and USA maps by adding defensive checks in `get_ne_data`.
+* Improved `wrong_class` and `stopifnot_error` to handle NA logical values more robustly.
+* Added unit tests for NA handling in utility functions.
+
+# b3gbi 0.8.12 - Minor update:
+
+* The cellCode column from the cube is now retained in indicator map outputs. This allows users to trace back grid cells to their original codes in the cube.
+
+# b3gbi 0.8.11 - Minor update:
+
+* Increased unit test coverage for better reliability.
+* Improved error handling in several functions.
+* Added some missing information to DESCRIPTION file.
+
+# b3gbi 0.8.10 - Minor update:
+
+* Fixed a bug that caused occurrences to be wrongly assigned in EEA grids as the coordinates were offset incorrectly.
+
+# b3gbi 0.8.9 - Minor update:
+
+* Fixed an important bug that caused observations to be assigned to multiple grid cells when level was set to 'cube' (no specific region was selected).
+* Fixed a bug that caused the occ_density_ts() function to give an error about missing 'cellid'. It should now work as expected.
+* Fixed a bug that that caused grid sizes other than 1km to fail for the EEA grid type (this was due to an inflexible coordinate extraction process that assumed all EEA grids were 1km).
+* Changed the default grid cell size to match the grid of the provided cube (previously the default was to recalculate based on either the level or the area of the cube, unless the user specificied otherwise, which could lead to unexpected results). Now the user can still manually select the size, or set it to 'auto' to have the package calculate the size. Also, the user is prompted if the grid size of the provided cube is likely to lead to a large number of grid cells and long calculation times.
+
+# b3gbi 0.8.8 - Minor update:
+
+* Fixed bug that caused some cubes to be read incorrectly if the delimiting character ('separator' paramter in process_cube()) was not manually specified, without informing the user.
+
+# b3gbi 0.8.7 - Minor update:
+
+* The bug fix for the Hill diversity maps in version 0.8.5 was incomplete, as some datasets were still failing when data_type = "abundance" or assume_freq = TRUE. The fix now applies to all parameter options.
+
+# b3gbi 0.8.6 - Minor update:
+
+* Added support for plotting interactive maps using the mapview package. Use plot_mv() to call mapview on an indicator_map object.
+
+# b3gbi 0.8.5 - Minor update:
+
+* Fixed a small bug in Hill diversity map code that was causing some datasets to fail.
+
+# b3gbi 0.8.4 - Minor update:
+
+* Fixed a bug that caused a grid cell naming mix up during Hill diversity map calculation and resulted in incorrect results.
+* The new data_type parameter for Hill diversity maps allows the user to treat their species occurrences as either incidence data (presence/absence with years as sampling units) or abundance data (number of occurrences as a proxy for abundance).
+* The new assume_freq option for Hill diversity maps allows the user to force the treatment of occurrence counts for each species as incidence frequencies (number of sites at which a species was present). This is only valid if data_type is set to 'incidence' and should remain at the default FALSE setting unless the user is certain of the data structure.
+
+# b3gbi 0.8.3 - Minor update:
+
+* Improved and updated the introductory tutorial
+
+# b3gbi 0.8.2 - Minor update:
+
+* Fixed the way Hill diversity is calculated for maps. It now uses years as sampling units instead of aggregating across years, and estimates from incidence data (presence/absence) instead of using observations as an abundance proxy.
+
+# b3gbi 0.8.1 - Minor update:
+
+* Fixed multiple small bugs that led to incorrect grid cell calculation and assignment for quarter-degree and eea grids.
+
+# b3gbi 0.8.0 - Major update:
+
+* The grid is now intersected with the shapefile polygon if one is provided, so the grid is clipped to the shape polygon instead of the bounding box.
+* The user can now choose to exclude occurrences on land, whereas previously only oceanic occurrences could be excluded. This can be changed using the parameter include_land = FALSE. By default, both ocean and land occurrences are included. Please note: this are geographical filters, they do not discriminate by taxa. Furthermore, since cubes contain pre-aggregated data, occurrences within grid cells that overlap both land and ocean cannot be excluded, regardless of whether the occurrences themselves are on land or ocean.
+* The user can now select the output CRS when plotting, independently of the CRS of the indicator object. This can be done using the parameter output_crs. By default, output_crs is NULL and will use the CRS of the indicator object.
+* Grid line width and colour, and the fill colour of empty grid cells can now be customized using the parameters grid_line_width, grid_line_colour, and grid_fill_colour.
+* The width and colour of the grid outline can also be customized using the parameters grid_outline_width and grid_outline_colour.
+* The grid outline is turned off by default, but can be turned on using the parameter visible_grid_outline = TRUE.
+* The grid outline can be plotted as a complete rectangle even when the grid is not, using complete_grid_outline. Set this to 'original' to use an outline that is generally rectangular but follows the distortions of the grid caused by the chosen projection. Use 'transformed' to force a proper rectangular shape regardless of the projection. By default, complete_grid_outline is set to FALSE.
+* It is now possible to crop a map according to the boundaries of the geographical regions you selected when calculating the indicator, even if they are different from the bounding box of the cube. This can be done using the parameter crop_by_region = TRUE. Note that this only works if you specified one or more region(s) when calculating the indicator, not if you used level = 'cube'. By default, crop_by_region is set to FALSE.
+* Colours and fill colours for each rnaturalearth layer that the user specifies when plotting a map can now be customized using the parameters layer_colours and layer_fill_colours. The user must provide a vector of colours that matches the order and number of layers specified in the layers parameter.
+* Panel grid lines can now be turned on using the parameter visible_panel_gridlines. By default, panel grid lines are turned off (visible_panel_gridlines = FALSE).
+* The parameter panel_bg has been renamed to ocean_fill_colour to better reflect its function.
+* The parameter ne_type, which specifies the type of rnaturalearth data used, is now retained in the metadata of the calculated indicator (the level and region are still retained as well). 
+* Area-based automatic cell size determination now has more categories.
+* Plotting code has been restructured and simplified to improve efficiency and readability.
+* Documentation has been updated and improved.
+
+# b3gbi 0.7.6 - Minor update:
+
+* Fixed a bug that caused rnaturalearth to keep downloading the same layer data. It now downloads the data to a cache folder and loads it from there the next time it needs it.
+
+# b3gbi 0.7.5 - Minor update:
+
+* Fixed a bug that caused maps to sometimes fail to plot with an error about wrong object class.
+* Fixed errors in the way Pielou's evenness, Williams' evenness, and taxonomic distinctness were calculated.
+* Some code restructuring to reduce the size of the codebase and improve readability.
+
+# b3gbi 0.7.4 - Minor update:
+
+* Refactored code in main plotting functions to improve efficiency and readability.
+* Fixed many style inconsistencies across the package.
+* This update does not significantly affect functionality of the package. It is mostly about cleaner, more efficient, more readable code.
+
+# b3gbi 0.7.3 - Minor update:
+
+* Hill diversity maps now calculate without error.
+* Hill diversity maps now use observations as an abundance proxy instead of attempting to use matrices of raw incidence data.
+* Hill diversity maps no longer calculate confidence intervals as visualization is not supported at this time.
+
+# b3gbi 0.7.2 - Minor update:
+
+* Hill diversity time series indicators now calculate without error.
+* The number of bootstrap confidence intervals for Hill diversity time series can now be set by the user, and confidence intervals can be turned off.
+* The confidence level for Hill diversity time series can now be set by the user (default is 0.95).
+* Taxonomic distinctness no longer tries to calculate confidence intervals
+* If no shapefile is selected and no grid cells are required for calculation, time series now bypass all geometric operations and are thus extremely fast.
+* The x and y axis expansions for plot_ts and plot_species_ts now default to 0.05 instead of 0.This makes time series plots look less cramped.
+
+# b3gbi 0.7.1 - Minor update:
+
+* Reorganized code in some indicator calculations to improve efficiency.
+* Fixed area_rarity_ts() that was broken by the previous update.
+
+* Note that the Hill functions are not working properly. This will hopefully be fixed in the next update.
+
+# b3gbi 0.7.0 - Major update:
+
+* Ocean occurrences are now included by default when calculating indicators (previously they were ignored entirely). They can be turned off using include_ocean = FALSE. Alternatively, you can set include_ocean = "buffered_coast" to include only occurrences within a set distance from the coast, measured in km (e.g., buffer_dist = 50).
+* Shape files can now be .wkt format. The CRS cannot be automatically determined from .wkt files, so it is assumed to be EPSG:4326 unless specified using the parameter shapefile_crs.
+* All geometry processing within the workflow is now done using a projected CRS, and conversion to the user-specified output_crs happens at the end. This allows for a simplified workflow and ensures more accurate calculations.
+* The user now has the option to add any rnaturalearth layer(s) to map plots using the layers parameter.
+* Automatic cell_size determination now takes total cube area into account instead of just the level ('country', 'continent', etc). Note, however, that the user still has the ability to manually set cell_size.
+* Warnings from the sf package should no longer appear due to improvements in the way geometry operations are handled by b3gbi.
+* The scale (resolution) of rnaturalearth data is now user-selectable when plotting (using the 'scale' parameter). The default is 'medium'.
+* Indicators are now calculated much faster as geometric operations have been simplified and reduced and code has been reorganized and simplified to improve efficiency.
+* Grid offsets are now correct.
+* Additional error checking included.
+* Many minor bug fixes.
+
+# b3gbi 0.6.3 - Minor update:
+
+* Fixed a bug that caused quarter-degree grid codes to be translated incorrectly for some geographic locations. They should now work correctly in all cases.
+
+# b3gbi 0.6.2 - Minor update:
+
+* Fixed a bug related to MGRS grids that caused southern hemisphere MGRS codes to be associated northern hemisphere EPSG codes.
+
+# b3gbi 0.6.1 - Minor update:
+
+* Fixed a bug that caused an error when calculating time series from MGRS cube.
+
+# b3gbi 0.6.0 - Major update:
+
+* Fixed the way that MGRS grid codes are processed. Previously they were converted to lat/long and a global CRS was used. The package instead now converts to UTM codes and chooses the most appropriate local CRS.
+
+# b3gbi 0.5.6 - Minor update:
+
+* Fixed a bug in that caused quarter-degree grid codes to be translated incorrectly.
+* Removed minimum size limitation for grid cells. Very high resolution grids now just give a message warning the user that it could take a while and suggesting a larger cell size.
+
+# b3gbi 0.5.5 - Minor update:
+
+* Fixed bugs in ab_rarity_map() and area_rarity_map() that caused incorrect calculations.
+* Added more unit tests.
+* Improved error handling in some functions.
+
+# b3gbi 0.5.4 - Minor update:
+
+* Fixed an error where spherical geometry was being turned off without a good reason. Spherical geometry is now only turned off to retry failed st_intersection() or st_difference() operations or when the user explicitly sets it to FALSE.
+* Additional error handling was added to many functions.
+* process_cube() now checks for contamination in the grid code column and throws an error if any false grid codes are found.
+* Some code was cleaned up and made more efficient.
+* Unit tests were added to the package for some functions to prevent breakage in future updates.
+
+# b3gbi 0.5.3 - Minor update:
+
+* Updated old and non-working example in process_cube() documentation.
+
+# b3gbi 0.5.2 - Minor update:
+
+* Fixed species occurrence and species range plots when selecting only one species (previously it was not possible to add additional ggplot code when only one species was plotted due to a bug in the plotting code).
+
+# b3gbi 0.5.1 - Minor update:
+
+* Equations in pkgdown help website now display correctly.
+* Fixed bad example in spec_occ_ts() documentation.
+
+# b3gbi 0.5.0 - Major update:
+
+* Conversion between input and output coordinate reference systems is now handled correctly even if they have different units (e.g. degrees vs km).
+* Conversion between CRSs with different units (e.g. degrees vs km) must now be forced by the user, and a warning is given.
+* More extensive documentation is now provided for indicator functions, including formulas and background information.
+* Users can now provide external shapefiles to limit indicator calculations to feature boundaries.
+* Removed compatibility with previous generation cubes (created using TriAs project code).
+
+# b3gbi 0.4.4 - Minor update:
+
+* Area is no longer calculated for projections that use degrees.
+* Occurrence density now refuses to calculate for projections that use degrees.
+* Object metadata now displays 'degrees' instead of 'degrees^2'.
+
+# b3gbi 0.4.3
+
+04.03.2025 - Minor update:
+
+* Add power parameter for map legend scale transformations. This enables the use of Box-Cox, modulus, and Yeo-Johnson transformations.
+
+# b3gbi 0.4.2
+
+20.02.2025 - Minor update:
+
+* Bug fix: Coordinates now display correctly after using process_cube() with custom grid codes
+
+# b3gbi 0.4.1
+
+19.02.2025 - Minor update:
+
+* All R CMD checks are now passing without any errors, warnings or notes
+* The 'taxize' package is no longer a dependency, but must be installed if you want to calculate taxonomic distinctness
+
+# b3gbi 0.4
+
+14.02.2025 - Major update:
+
+* Better integration with rnaturalearth
+* Fully supports b3gbi GUI functions
+* Hill diversity functions are now exported and can be used
+
+# b3gbi 0.3.1
+
+12.02.2025 - Minor update:
+
+* Get dependencies from recognised repositories
+* Join the [R-universe](https://b-cubed-eu.r-universe.dev/)!
+
+# b3gbi 0.3
+
+05.12.2024 - Major update:
+
+* Added bootstrapped confidence intervals to most indicators.
+* Added many additional customization parameters for time series plots. See plot_ts() documentation.
+* Defaults for some visualization parameters have changed.
+* Fixed bug that caused errors about incorrect cell sizes when they were actually correct.
+
+# b3gbi 0.2.3.1
+
+20.11.2024 - Minor update:
+
+* User-supplied resolutions for 'km'-based grid systems are now properly handled
+
+# b3gbi 0.2.3
+
+07.11.2024 - Minor update:
+
+Compatible with gcube output:
+
+* added class sim_cube for objects without grid codes
+* added 'none' to grid_type options
+
+Bug fixes:
+
+* No longer returns an error when you correctly specify a cell size when calculating indicators with mgrs grid
+
+# b3gbi 0.2.2
+
+16.07.2024 - Minor update:
+
+* Cubes processed using process_cube_old() now have a column called minCoordinateUncertaintyInMeters, containing the spatial uncertainty from the cube. Previously the spatial uncertainty column was made available when using process_cube() but was ignored by process_cube_old().
+
+# b3gbi 0.2.1
+
+27.06.2024 - Minor update:
+
+* Added options to improve control of plot output. The argument land_fill_colour allows you to change the colour of the land area outside of the grid.The argument crop_to_grid will snap the plot edges to the gridded area. This will improve the way the plot looks if e.g. your data is sparse and does not extend to the edges of a country or continent. 
+* Fixed a bug in process_cube_old that caused it to fail.
+* Fixed a bug that caused calculated indicator objects to retain too many data columns.
+
+# b3gbi 0.2.0
+
+24.06.2024 - Major update:
+
+* Added occupancy turnover to available indicators.
+* All indicators in the package now working (you can get a list by typing 'available_indicators').
+* The process_cube function now expects a current generation cube (created using the GBIF API) by default. Previous generation cubes (created using the TriAS project code) can still be used but must now be processed using a separate function, process_cube_old.
+* Added support for non-standard column names (you can manually input column names when processing your cube, and the process_cube function will rename them to the Darwin Core standard expected by the rest of the package).
+* Added support for Quarter Degree and Military grids (note that the Military grids are translated by an external package that is not on CRAN. It is hoped to replace this with native code in a later update).
+* Process_cube function can now automatically find the column containing the grid cell codes and detect the type of grid (there are options to manually input the column name and grid cell type but in most cases it is better to leave it on automatic to avoid potential downstream problems).
+* You can now select the output CRS you want to use for your calculated indicator.
+
+
+# b3gbi 0.1.0
+
+

@@ -1,0 +1,111 @@
+#' @title 'processed_cube' S3 Constructor
+#'
+#' @description This function constructs a 'processed_cube' S3 object, a
+#' specialized data structure designed for biodiversity analysis within this
+#' package. It validates the input data cube, calculates essential summary
+#' information, and prepares the object for further use.
+#'
+#' @param x A tibble data cube containing occurrence data.
+#'
+#' @return  A 'processed_cube' S3 object containing:
+#'   * **Summary statistics:** First and last year of data, coordinate range,
+#'     number of spatial cells, species, and observations.
+#'   * **Diversity information:** Kingdoms represented, resolutions, indication
+#'    of multiple resolutions and datasets, and types of occurrence records.
+#'   * **Original data:** The input data cube.
+#'
+#' @note 'processed_cube' objects are used by various analysis functions within
+#'  this package.
+#'
+#' @noRd
+new_processed_cube <- function(x, grid_type) {
+  # check that x is a tibble and all necessary columns are present
+  stopifnot(tibble::is_tibble(x),
+            all(c("year",
+                  "cellCode",
+                  "taxonKey",
+                  "obs",
+                  "scientificName",
+                  "resolution") %in% names(x)))
+                  
+  # Coordinate-dependent summary
+  has_coords <- all(c("xcoord", "ycoord") %in% names(x))
+  res_num <- as.numeric(stringr::str_extract(x$resolution[1],
+                                             "^[+-]?\\d*\\.?\\d+"))
+  res_unit <- stringr::str_extract(x$resolution[1], "(km|m|degrees)")
+  res_meters <- res_num
+  if (!is.na(res_unit) && res_unit == "km") {
+    res_meters <- res_num * 1000
+  }
+  
+  if (has_coords) {
+    if (grid_type == "eqdgc") {
+      coord_range = list("xmin" = min(x$xcoord, na.rm = TRUE) - (res_num / 2),
+                         "xmax" = max(x$xcoord, na.rm = TRUE) + (res_num / 2),
+                         "ymin" = min(x$ycoord, na.rm = TRUE) - (res_num / 2),
+                         "ymax" = max(x$ycoord, na.rm = TRUE) + (res_num / 2))
+    } else if (grid_type == "eea") {
+      coord_range = list("xmin" = min(x$xcoord, na.rm = TRUE),
+                         "xmax" = max(x$xcoord, na.rm = TRUE) + res_meters,
+                         "ymin" = min(x$ycoord, na.rm = TRUE),
+                         "ymax" = max(x$ycoord, na.rm = TRUE) + res_meters)
+    } else if (grid_type == "mgrs") {
+      coord_range = list("xmin" = min(x$xcoord, na.rm = TRUE) - (res_meters / 2),
+                         "xmax" = max(x$xcoord, na.rm = TRUE) + (res_meters / 2),
+                         "ymin" = min(x$ycoord, na.rm = TRUE) - (res_meters / 2),
+                         "ymax" = max(x$ycoord, na.rm = TRUE) + (res_meters / 2))
+    } else {
+      coord_range = list("xmin" = min(x$xcoord, na.rm = TRUE),
+                         "xmax" = max(x$xcoord, na.rm = TRUE),
+                         "ymin" = min(x$ycoord, na.rm = TRUE),
+                         "ymax" = max(x$ycoord, na.rm = TRUE))
+    }
+  } else {
+    coord_range <- list("xmin" = NA, "xmax" = NA, "ymin" = NA, "ymax" = NA)
+  }
+  if (all(c("datasetKey", "basisOfRecord") %in% names(x))) {
+    structure(list(first_year = min(x$year),
+                   last_year = max(x$year),
+                   coord_range = coord_range,
+                   num_cells = length(unique(x$cellCode)),
+                   num_species = length(unique(x$taxonKey)),
+                   num_obs = sum(x$obs),
+                   kingdoms = ifelse(
+                     "kingdom" %in% colnames(x),
+                     c(unique(x$kingdom)),
+                     "Data not present"
+                   ),
+                   num_families = ifelse(
+                     "family" %in% colnames(x),
+                     length(unique(x$family)),
+                     "Data not present"
+                   ),
+                   grid_type = grid_type,
+                   resolutions = unique(x$resolution),
+                   num_datasets = length(unique(x$datasetKey)),
+                   record_types = unique(x$basisOfRecord),
+                   data = x),
+              class = "processed_cube_dsinfo")
+  } else {
+    structure(list(first_year = min(x$year),
+                   last_year = max(x$year),
+                   coord_range = coord_range,
+                   num_cells = length(unique(x$cellCode)),
+                   num_species = length(unique(x$taxonKey)),
+                   num_obs = sum(x$obs),
+                   kingdoms = ifelse(
+                     "kingdom" %in% colnames(x),
+                     c(unique(x$kingdom)),
+                     "Data not present"
+                   ),
+                   num_families = ifelse(
+                     "family" %in% colnames(x),
+                     length(unique(x$family)),
+                     "Data not present"
+                   ),
+                   grid_type = grid_type,
+                   resolutions = unique(x$resolution),
+                   data = x),
+              class = "processed_cube")
+  }
+}

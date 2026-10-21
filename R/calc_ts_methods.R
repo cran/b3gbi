@@ -1,0 +1,604 @@
+#' @export
+#' @rdname calc_ts
+calc_ts.default <- function(x, ...) {
+
+  warning(paste0(
+      "calc_ts does not know how to handle object of class ", class(x),
+      ". Please ensure you are not calling calc_ts directly on an object."
+    ))
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.completeness <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.", inherits(x, "completeness"))
+
+  indicator <- calc_ts_completeness_core(x = x, ...)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.hill0 <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "hill0"))
+
+  indicator <- calc_ts_hill_core(x = x, type = "hill0", ...)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.hill1 <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "hill1"))
+
+  indicator <- calc_ts_hill_core(x = x, type = "hill1", ...)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.hill2 <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "hill2"))
+
+  indicator <- calc_ts_hill_core(x = x, type = "hill2", ...)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.obs_richness <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.", inherits(x, "obs_richness"))
+
+  year <- taxonKey <- NULL
+
+  # Calculate observed species richness by year
+  indicator <- x %>%
+    dplyr::select(year, taxonKey) %>%
+    dplyr::summarise(diversity_val = dplyr::n_distinct(taxonKey),
+                     .by = "year") %>%
+    dplyr::arrange(year)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.cum_richness <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.", inherits(x, "cum_richness"))
+
+  year <- taxonKey <- unique_by_year <- NULL
+
+    # Calculate the cumulative number of unique species observed
+    indicator <- x %>%
+      dplyr::select(year, taxonKey) %>%
+      dplyr::distinct(taxonKey, .keep_all = TRUE) %>%
+      dplyr::summarize(unique_by_year = dplyr::n_distinct(taxonKey),
+                       .by = year) %>%
+      dplyr::arrange(year) %>%
+      dplyr::reframe(year = year, diversity_val = cumsum(unique_by_year))
+
+    return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.total_occ <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.", inherits(x, "total_occ"))
+
+  obs <- year <- NULL
+
+  # Fast path for single-year bootstrap calls to avoid dplyr overhead
+  if (length(unique(x$year)) == 1) {
+    if (nrow(x) == 0) {
+      indicator <- data.frame(year = numeric(), diversity_val = numeric())
+    } else {
+      indicator <- data.frame(
+        year = x$year[1],
+        diversity_val = sum(x$obs, na.rm = TRUE)
+      )
+    }
+  } else {
+    # Calculate total number of occurrences over the grid
+    indicator <- x %>%
+      dplyr::summarize(diversity_val = sum(obs), .by = "year")
+  }
+
+  return(indicator)
+
+}
+
+
+#' @export
+#' @rdname calc_ts
+calc_ts.spec_richness_density <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "spec_richness_density"))
+
+  total_richness <- year <- diversity_val <- taxonKey <- area <- NULL
+
+  # Extract the total area from the attribute
+  total_study_area_sqkm <- attr(x, "total_area_sqkm")
+
+  # Critical Check: Ensure the total area attribute was found and is valid
+  if (is.null(total_study_area_sqkm) ||
+      !is.numeric(total_study_area_sqkm) ||
+      total_study_area_sqkm <= 0) {
+    stop(paste("The total area of the study region ('total_area_sqkm') is ",
+    "missing or invalid in the data attributes. Ensure the area is correctly ",
+    "calculated and attached to the data in the workflow."))
+  }
+
+  # Calculate density of species richness over the grid (per square km)
+  indicator <- x %>%
+    dplyr::reframe(
+      # Numerator: Unique species richness across all occupied cells for the year
+      total_richness = dplyr::n_distinct(taxonKey),
+      .by = "year"
+    ) %>%
+    dplyr::mutate(
+      # Denominator: Use the constant Total Study Area
+      diversity_val = total_richness / total_study_area_sqkm
+    ) %>%
+    # Final Formatting
+    dplyr::select(year, diversity_val) %>%
+    dplyr::mutate(diversity_val = as.numeric(diversity_val)) %>%
+    dplyr::arrange(year)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.occ_density <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.", inherits(x, "occ_density"))
+
+  total_occurrences <- year <- diversity_val <- obs <- area <- NULL
+
+  # Extract the total area from the attribute
+  total_study_area_sqkm <- attr(x, "total_area_sqkm")
+
+  # Critical Check: Ensure the total area attribute was found and is valid
+  if (is.null(total_study_area_sqkm) ||
+      !is.numeric(total_study_area_sqkm) ||
+      total_study_area_sqkm <= 0) {
+    stop(paste("The total area of the study region ('total_area_sqkm') is ",
+    "missing or invalid in the data attributes. Ensure the area is correctly ",
+    "calculated and attached to the data in the workflow."))
+  }
+
+  # Calculate density of occurrences over the grid (per square km)
+  indicator <- x %>%
+    dplyr::reframe(
+      # Numerator: Sum of all occurrences across all occupied cells for the year
+      total_occurrences = sum(obs),
+      .by = "year"
+    ) %>%
+    dplyr::mutate(
+      # Denominator: Use the constant Total Study Area
+      diversity_val = total_occurrences / total_study_area_sqkm
+    ) %>%
+    # Final Formatting
+    dplyr::select(year, diversity_val) %>%
+    dplyr::mutate(diversity_val = as.numeric(diversity_val)) %>%
+    dplyr::arrange(year)
+    # dplyr::reframe(diversity_val = sum(obs) / area,
+    #                .by = c("year", "cellid")) %>%
+    # dplyr::reframe(diversity_val = mean(diversity_val), .by = "year") %>%
+    # dplyr::mutate(diversity_val = as.numeric(diversity_val)) %>%
+    # dplyr::arrange(year)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.newness <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.", inherits(x, "newness"))
+
+  year <- cum_obs <- cum_year_sum <- NULL
+
+  # Handle empty input data
+  if (nrow(x) == 0) {
+    return(tibble::tibble(year = numeric(), diversity_val = numeric()))
+  }
+
+  # Prepare the data with cumulative sums and counts
+  cum_data <- x %>%
+    dplyr::arrange(year) %>%
+    dplyr::mutate(cum_year_sum = cumsum(year),
+                  cum_obs = seq_along(cum_year_sum))
+
+  # Extract the final cumulative mean for each year
+  indicator <- cum_data %>%
+    dplyr::group_by(year) %>%
+    dplyr::summarise(diversity_val = dplyr::last(round(cum_year_sum / cum_obs)),
+                     .groups = "drop")
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.williams_evenness <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "williams_evenness"))
+
+  # Call function to calculate evenness over a grid
+  indicator <- calc_ts_evenness_core(x = x, type = "williams_evenness", ...)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.pielou_evenness <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "pielou_evenness"))
+
+  # Call function to calculate evenness over a grid
+  indicator <- calc_ts_evenness_core(x = x, type = "pielou_evenness", ...)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.ab_rarity <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.", inherits(x, "ab_rarity"))
+
+  obs <- taxonKey <- records_taxon <- year <- rarity <- total_obs <- NULL
+
+  # Calculate rarity as the sum of the inverse of relative abundance for each
+  # species. Relative abundance is calculated separately for each year, and
+  # each species contributes once per year (not once per occupied cell).
+  indicator <- x %>%
+    dplyr::summarise(records_taxon = sum(obs, na.rm = TRUE),
+                     .by = c(year, taxonKey)) %>%
+    dplyr::filter(records_taxon > 0) %>%
+    dplyr::mutate(total_obs = sum(records_taxon), .by = year) %>%
+    dplyr::mutate(rarity = total_obs / records_taxon) %>%
+    dplyr::summarise(diversity_val = sum(rarity), .by = "year") %>%
+    dplyr::arrange(year)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.area_rarity <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.", inherits(x, "area_rarity"))
+
+  year <- cellid <- taxonKey <- occupied_cells <- rarity <- NULL
+  diversity_val <- NULL
+
+  total_cells <- NULL
+
+  # Calculate rarity as the sum (per grid cell) of the inverse of occupancy
+  # frequency for each species, then average over cells. Occupancy is
+  # calculated separately for each year.
+  indicator <- x %>%
+    dplyr::distinct(year, cellid, taxonKey) %>%
+    dplyr::mutate(total_cells = dplyr::n_distinct(cellid), .by = year) %>%
+    dplyr::mutate(occupied_cells = dplyr::n(), .by = c(year, taxonKey)) %>%
+    dplyr::mutate(rarity = total_cells / occupied_cells) %>%
+    dplyr::summarise(diversity_val = sum(rarity), .by = c("year", "cellid")) %>%
+    dplyr::summarise(diversity_val = mean(diversity_val), .by = "year") %>%
+    dplyr::arrange(year)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.spec_occ <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "spec_occ"))
+
+  year <- scientificName <- taxonKey <- obs <- diversity_val <- NULL
+
+  # Fast path for single-group bootstrap calls to avoid dplyr overhead
+  if (dplyr::n_distinct(x$year) <= 1 && dplyr::n_distinct(x$taxonKey) <= 1) {
+    if (nrow(x) == 0) {
+      indicator <- data.frame(year = numeric(), taxonKey = character(),
+                              scientificName = character(), diversity_val = numeric())
+    } else {
+      indicator <- data.frame(
+        year = x$year[1],
+        taxonKey = x$taxonKey[1],
+        scientificName = x$scientificName[1],
+        diversity_val = sum(x$obs, na.rm = TRUE)
+      )
+    }
+  } else {
+    # Standard path for multiple groups
+    indicator <- x %>%
+      dplyr::summarize(diversity_val = sum(obs),
+                       scientificName = scientificName[1],
+                       .by = c(taxonKey, year)) %>%
+      dplyr::arrange(year) %>%
+      dplyr::select(year, taxonKey, scientificName, diversity_val)
+  }
+
+  # Add the 'spec_occ' class back to the object
+  class(indicator) <- c("spec_occ", class(indicator))
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.spec_range <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "spec_range"))
+
+  year <- taxonKey <- obs <- diversity_val <- scientificName <- NULL
+
+  # Fast path for single-group bootstrap calls to avoid dplyr overhead
+  if (dplyr::n_distinct(x$year) <= 1 && dplyr::n_distinct(x$taxonKey) <= 1) {
+    if (nrow(x) == 0) {
+      indicator <- data.frame(year = numeric(), taxonKey = character(),
+                              scientificName = character(), diversity_val = numeric())
+    } else {
+      indicator <- data.frame(
+        year = x$year[1],
+        taxonKey = x$taxonKey[1],
+        scientificName = x$scientificName[1],
+        diversity_val = sum(x$obs >= 1, na.rm = TRUE)
+      )
+    }
+  } else {
+    # Standard path for multiple groups
+    indicator <- x %>%
+      dplyr::summarize(diversity_val = sum(obs >= 1),
+                       scientificName = scientificName[1],
+                       .by = c(taxonKey, year)) %>%
+      dplyr::arrange(taxonKey) %>%
+      dplyr::select(year, taxonKey, scientificName, diversity_val)
+  }
+
+  # Add the 'spec_range' class back to the object
+  class(indicator) <- c("spec_range", class(indicator))
+
+  return(indicator)
+
+}
+
+#' @param occ_type Integer controlling the occupancy denominator (default `0`):
+#'   * `0` — **Total-area occupancy**: number of cells occupied by species /
+#'     total number of grid cells in the study region (including unsampled
+#'     cells). This is the most conservative measure. *Presence-only caveat*:
+#'     empty cells cannot be assumed to be truly unoccupied; they may simply
+#'     lack sampling effort.
+#'   * `1` — **Relative-to-ever-occupied occupancy**: number of cells occupied
+#'     by species / number of cells with *at least one occurrence (any species)
+#'     anywhere in the time window*. This conditions on cells where some
+#'     sampling effort is documented but the denominator is still constant
+#'     across years.
+#'   * `2` — **Annual occupancy**: for each year, number of cells occupied by
+#'     species / number of cells with at least one occurrence (any species) *in
+#'     that year*. The denominator therefore varies by year, reflecting changes
+#'     in sampling footprint over time.
+#'
+#'   **Note on presence-only data**: All three types are computed from
+#'   presence-only occurrence data. A cell with no records cannot be assumed
+#'   to be truly unoccupied; it may be unsampled or under-surveyed. Types 1
+#'   and 2 partially address this by restricting the denominator to cells
+#'   with documented occurrences, but they still reflect *recording effort*
+#'   rather than true absence. Interpret all types with care.
+#'
+#'   **Note on cell aggregation**: When a coarser `cell_size` is chosen, data
+#'   are aggregated to coarser grid cells before this calculation. The
+#'   denominator counts post-aggregation cells (`cellid`), not original cube
+#'   cells (`cellCode`).
+#' @export
+#' @rdname calc_ts
+calc_ts.relative_occupancy <- function(x, occ_type = 0, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "relative_occupancy"))
+
+  if (!occ_type %in% c(0L, 1L, 2L)) {
+    stop("`occ_type` must be 0, 1, or 2.")
+  }
+
+  year <- taxonKey <- scientificName <- diversity_val <- cellid <- NULL
+  occupied_cells_yr <- n_occ_cells <- NULL
+
+  # Fast path for single-year bootstrap calls
+  if (length(unique(x$year)) == 1) {
+    # Count cells occupied by each species
+    species_cells <- x %>%
+      dplyr::distinct(cellid, scientificName, taxonKey) %>%
+      dplyr::count(scientificName, taxonKey, name = "species_cells") %>%
+      dplyr::mutate(year = x$year[1])
+
+    if (occ_type == 0L) {
+      total_num_cells <- attr(x, "total_num_cells")
+      indicator <- species_cells %>%
+        dplyr::mutate(diversity_val = species_cells / total_num_cells)
+    } else if (occ_type == 1L) {
+      ever_occupied <- dplyr::n_distinct(x$cellid)
+      indicator <- species_cells %>%
+        dplyr::mutate(diversity_val = species_cells / ever_occupied)
+    } else {
+      active_cells <- dplyr::n_distinct(x$cellid)
+      indicator <- species_cells %>%
+        dplyr::mutate(diversity_val = species_cells / active_cells)
+    }
+  } else {
+    # Standard path for multiple years
+    # Count cells occupied by each species in each year
+    species_cells <- x %>%
+      dplyr::distinct(year, cellid, scientificName, taxonKey) %>%
+      dplyr::count(year, scientificName, taxonKey, name = "species_cells")
+
+    if (occ_type == 0L) {
+      total_num_cells <- attr(x, "total_num_cells")
+      if (is.null(total_num_cells)) {
+        stop("total_num_cells attribute not found.")
+      }
+      indicator <- species_cells %>%
+        dplyr::mutate(diversity_val = species_cells / total_num_cells)
+    } else if (occ_type == 1L) {
+      ever_occupied <- dplyr::n_distinct(x$cellid)
+      indicator <- species_cells %>%
+        dplyr::mutate(diversity_val = species_cells / ever_occupied)
+    } else {
+      active_cells_per_year <- x %>%
+        dplyr::distinct(year, cellid) %>%
+        dplyr::count(year, name = "n_occ_cells")
+
+      indicator <- species_cells %>%
+        dplyr::left_join(active_cells_per_year, by = "year") %>%
+        dplyr::mutate(diversity_val = species_cells / n_occ_cells) %>%
+        dplyr::select(-n_occ_cells)
+    }
+  }
+
+  indicator <- indicator %>%
+    dplyr::select(year, taxonKey, scientificName, diversity_val) %>%
+    dplyr::arrange(year, taxonKey)
+
+  # Add the 'relative_occupancy' class back to the object
+  class(indicator) <- c("relative_occupancy", class(indicator))
+
+  return(indicator)
+
+}
+
+#' @param set_rows Deprecated and ignored. Taxa are now looked up by their
+#'  GBIF taxon key, so there is no ambiguity to resolve.
+#' @export
+#' @rdname calc_ts
+calc_ts.tax_distinct <- function(x, set_rows = 1, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "tax_distinct"))
+
+  year <- diversity_val <- NULL
+
+  # Early return for empty input
+  if (nrow(x) == 0) {
+    return(tibble::tibble(year = integer(), diversity_val = numeric()))
+  }
+
+  # Retrieve the taxonomic hierarchy of all taxa once (one batched GBIF
+  # request, cached for the session) and reuse it for every year
+  tax_hier <- get_taxonomic_hierarchy(x)
+
+  # Calculate taxonomic distinctness
+  indicator <- x %>%
+    tibble::add_column(diversity_val = NA) %>%
+    dplyr::group_split(year) %>%
+    purrr::map(function(y) {
+      y %>%
+        dplyr::mutate(
+          diversity_val = compute_tax_distinct_formula(y, tax_hier))
+    }) %>%
+    dplyr::bind_rows() %>%
+    dplyr::distinct(year, diversity_val, .keep_all = TRUE) %>%
+    dplyr::select(year, diversity_val)
+
+  return(indicator)
+
+}
+
+#' @export
+#' @rdname calc_ts
+calc_ts.occ_turnover <- function(x, ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "occ_turnover"))
+
+  year <- taxonKey <- species <- prev_species <- gains <- losses <- NULL
+  diversity_val <- shared <- NULL
+
+  # Get a list of unique species for each year
+  species_by_year <- x %>%
+    dplyr::group_by(year) %>%
+    dplyr::summarise(species = list(unique(taxonKey)), .groups = "drop") %>%
+    dplyr::arrange(year) %>%
+    dplyr::mutate(
+      prev_species = dplyr::lag(species, n = 1, default = list(c()))
+    )
+
+  # Calculate gains, losses, and shared species between years
+  indicator <- species_by_year %>%
+    dplyr::mutate(
+      gains = purrr::map2_dbl(species, prev_species,
+                              ~length(setdiff(.x, .y))),
+      losses = purrr::map2_dbl(species, prev_species,
+                               ~length(setdiff(.y, .x))),
+      shared = purrr::map2_dbl(species, prev_species,
+                               ~length(intersect(.x, .y)))
+      ) %>%
+    dplyr::mutate(
+      # Calculate diversity_val using a conditional statement
+      diversity_val = ifelse(
+        dplyr::row_number() == 1,
+        NA_real_,
+        (gains + losses) / (gains + losses + shared)
+      )
+    ) %>%
+    dplyr::select(year, diversity_val)
+
+  return(indicator)
+
+}

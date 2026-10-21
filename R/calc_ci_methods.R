@@ -1,0 +1,619 @@
+#' @title Calculate Confidence Intervals for a Biodiversity Indicator
+#'
+#' @description Calculates indicator-level bootstrap confidence intervals. It
+#' is called internally by `add_ci()` (indicator level) or when `ci_type` is
+#' supplied to a `*_ts()` function; it is not meant to be called directly.
+#'
+#' @param x A data cube object
+#' @param indicator An indicator calculated over time, in the form of a data
+#'  frame. *Note: this should NOT be an 'indicator_ts' object as it is meant to
+#'  be called by the 'compute_indicator_workflow' function.
+#' @param ... Additional arguments passed to specific calc_ci functions and
+#'  on to `boot::boot.ci()` (e.g., `conf`, `h`, `hinv`), or to the
+#'  \pkg{iNEXT}-based calculation for Hill numbers (e.g., `conf`).
+#' @examples
+#' \donttest{
+#' # calc_ci() is called automatically when confidence intervals are requested
+#' # during indicator calculation (or by add_ci(bootstrap_level = "indicator"))
+#' occ_ts <- total_occ_ts(example_cube_1, first_year = 2000,
+#'                        ci_type = "perc", num_bootstrap = 100)
+#' head(occ_ts$data)
+#' }
+#' @return A data frame containing indicator values with calculated lower (`ll`) and upper (`ul`) confidence bounds.
+#' @export
+calc_ci <- function(x,
+                    indicator,
+                    ...) {
+
+  UseMethod("calc_ci")
+
+}
+
+#' @export
+#' @rdname calc_ci
+calc_ci.default <- function(x,
+                            indicator,
+                            ...) {
+
+  warning(
+    paste(
+      "calc_ci does not know how to handle object of class ",
+      class(x),
+      ". Please ensure you are not calling calc_ci directly on an object."
+    )
+  )
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for total occurrences
+#' @param num_bootstrap (Optional) Set the number of bootstraps to calculate for
+#'  generating confidence intervals. (Default: 1000)
+#' @param ci_type (Optional) Type of bootstrap interval passed to
+#'  `boot::boot.ci()`. (Default: "perc")
+#' @export
+calc_ci.total_occ <- function(x,
+                              indicator,
+                              num_bootstrap = 1000,
+                              ci_type = "perc",
+                              ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "total_occ"))
+
+  year <- NULL
+
+  x <-
+    x %>%
+    dplyr::arrange(year)
+
+  # Put individual observations into a list organized by year
+  ind_list <- list_org_by_year(x, "obs")
+
+  # Bootstrap indicator value
+  bootstraps <-
+    ind_list %>%
+    purrr::map(~boot::boot(
+      data = .,
+      statistic = boot_statistic_sum,
+      R = num_bootstrap))
+
+  # Calculate confidence intervals and add to indicator values
+  ci <- calc_ci_core(bootstraps, indicator, ci_type, ...)
+
+  return(ci)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for occurrence density
+#' @param num_bootstrap (Optional) Set the number of bootstraps to calculate for
+#'  generating confidence intervals. (Default: 1000)
+#' @param ci_type (Optional) Type of bootstrap interval passed to
+#'  `boot::boot.ci()`. (Default: "perc")
+#' @export
+calc_ci.occ_density <- function(x,
+                                indicator,
+                                num_bootstrap = 1000,
+                                ci_type = "perc",
+                                ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "occ_density"))
+
+  total_area <- year <- obs <- area <- NULL
+
+    # 1. Extract the total area from the attribute attached in compute_indicator_workflow
+    total_study_area_sqkm <- attr(x, "total_area_sqkm")
+
+  if (is.null(total_study_area_sqkm) ||
+      !is.numeric(total_study_area_sqkm) ||
+      total_study_area_sqkm <= 0) {
+    stop(paste("The total area of the study region ('total_area_sqkm') is ",
+    "missing or invalid in the data attributes. Cannot calculate confidence ",
+    "intervals for occ_density."))
+  }
+
+    # Add the constant area column to the data frame
+    data_for_boot <- x %>%
+      dplyr::mutate(total_area = total_study_area_sqkm) %>%
+      dplyr::select(year, obs, total_area)
+
+    # Split the data frame into a list of data frames (one per year)
+    ind_list <- data_for_boot %>%
+      dplyr::group_by(year) %>%
+      dplyr::group_split()
+
+    # Name the list elements
+    names(ind_list) <- data_for_boot %>% dplyr::pull(year) %>% unique()
+
+  # Bootstrap indicator value for each year
+  bootstraps <-
+    ind_list %>%
+    purrr::map(~boot::boot(
+      data = .,
+      statistic = boot_statistic_density,
+      R = num_bootstrap))
+
+  # Calculate confidence intervals and add to indicator values
+  ci <- calc_ci_core(bootstraps, indicator, ci_type, ...)
+
+  return(ci)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for species richness density
+#' @param num_bootstrap (Optional) Set the number of bootstraps to calculate for
+#'  generating confidence intervals. (Default: 1000)
+#' @param ci_type (Optional) Type of bootstrap interval passed to
+#'  `boot::boot.ci()`. (Default: "perc")
+#' @export
+calc_ci.spec_richness_density <- function(x,
+                                          indicator,
+                                          num_bootstrap = 1000,
+                                          ci_type = "perc",
+                                          ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "spec_richness_density"))
+
+  total_area <- year <- taxonKey <- NULL
+
+  # 1. Extract the total area from the attribute attached in compute_indicator_workflow
+  total_study_area_sqkm <- attr(x, "total_area_sqkm")
+
+  if (is.null(total_study_area_sqkm) ||
+      !is.numeric(total_study_area_sqkm) ||
+      total_study_area_sqkm <= 0) {
+    stop(paste("The total area of the study region ('total_area_sqkm') is ",
+    "missing or invalid in the data attributes. Cannot calculate confidence ",
+    "intervals for spec_richness_density."))
+  }
+
+  # Add the constant area column to the data frame
+  data_for_boot <- x %>%
+    dplyr::mutate(total_area = total_study_area_sqkm) %>%
+    dplyr::select(year, taxonKey, total_area)
+
+  # Split the data frame into a list of data frames (one per year)
+  ind_list <- data_for_boot %>%
+    dplyr::group_by(year) %>%
+    dplyr::group_split()
+
+  # Name the list elements
+  names(ind_list) <- data_for_boot %>%
+    dplyr::pull(year) %>%
+    unique()
+
+  # Bootstrap indicator value for each year
+  bootstraps <-
+    ind_list %>%
+    purrr::map(~boot::boot(
+      data = .,
+      statistic = boot_statistic_richness_density,
+      R = num_bootstrap))
+
+  # Calculate confidence intervals and add to indicator values
+  ci <- calc_ci_core(bootstraps, indicator, ci_type, ...)
+
+  return(ci)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for newness
+#' @param num_bootstrap (Optional) Set the number of bootstraps to calculate for
+#'  generating confidence intervals. (Default: 1000)
+#' @param ci_type (Optional) Type of bootstrap interval passed to
+#'  `boot::boot.ci()`. (Default: "perc")
+#' @export
+calc_ci.newness <- function(x,
+                            indicator,
+                            num_bootstrap = 1000,
+                            ci_type = "perc",
+                            ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.", inherits(x, "newness"))
+
+  year <- x$year
+
+  # Put individual observations into a list organized by year
+  ind_list <- lapply(unique(year), function(y) {
+    a <- year[year <= y]
+    return(a)
+  })
+
+  # Use years to name list elements
+  names(ind_list) <- unique(year)
+
+  # Bootstrap indicator value
+  bootstraps <- ind_list %>%
+    purrr::map(~boot::boot(
+      data = .,
+      statistic = boot_statistic_newness,
+      R = num_bootstrap))
+
+  # Calculate confidence intervals and add to indicator values
+  ci <- calc_ci_core(bootstraps, indicator, ci_type, ...)
+
+  return(ci)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for Williams' evenness
+#' @param num_bootstrap (Optional) Set the number of bootstraps to calculate for
+#'  generating confidence intervals. (Default: 1000)
+#' @param ci_type (Optional) Type of bootstrap interval passed to
+#'  `boot::boot.ci()`. (Default: "perc")
+#' @export
+calc_ci.williams_evenness <- function(x,
+                                      ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "williams_evenness"))
+
+  # Call function to calculate evenness over a grid
+  indicator <- calc_ci_evenness_core(x = x,
+                                     type = "williams_evenness",
+                                     ...)
+
+  return(indicator)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for Pielou's evenness
+#' @param num_bootstrap (Optional) Set the number of bootstraps to calculate for
+#'  generating confidence intervals. (Default: 1000)
+#' @param ci_type (Optional) Type of bootstrap interval passed to
+#'  `boot::boot.ci()`. (Default: "perc")
+#' @export
+calc_ci.pielou_evenness <- function(x,
+                                    ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.", inherits(x, "pielou_evenness"))
+
+  # Call function to calculate evenness over a grid
+  indicator <- calc_ci_evenness_core(x = x,
+                                     type = "pielou_evenness",
+                                     ...)
+
+  return(indicator)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for abundance-based rarity
+#' @param num_bootstrap (Optional) Set the number of bootstraps to calculate for
+#'  generating confidence intervals. (Default: 1000)
+#' @param ci_type (Optional) Type of bootstrap interval passed to
+#'  `boot::boot.ci()`. (Default: "perc")
+#' @export
+calc_ci.ab_rarity <- function(x,
+                              indicator,
+                              num_bootstrap = 1000,
+                              ci_type = "perc",
+                              ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "ab_rarity"))
+
+  obs <- taxonKey <- records_taxon <- year <- rarity <- total_obs <- NULL
+
+    # Calculate rarity for each species each year (relative abundance is
+    # calculated per year; one value per species per year)
+    x <- x %>%
+      dplyr::summarise(records_taxon = sum(obs, na.rm = TRUE),
+                       .by = c(year, taxonKey)) %>%
+      dplyr::filter(records_taxon > 0) %>%
+      dplyr::mutate(total_obs = sum(records_taxon), .by = year) %>%
+      dplyr::mutate(rarity = total_obs / records_taxon) %>%
+      dplyr::arrange(year)
+
+    ind_list <- list_org_by_year(x, "rarity")
+
+    # Bootstrap indicator value
+    bootstraps <- ind_list %>%
+      purrr::map(~boot::boot(
+        data = .,
+        statistic = boot_statistic_sum,
+        R = num_bootstrap))
+
+    # Calculate confidence intervals and add to indicator values
+    ci <- calc_ci_core(bootstraps, indicator, ci_type, ...)
+
+    return(ci)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for area-based rarity
+#' @param num_bootstrap (Optional) Set the number of bootstraps to calculate for
+#'  generating confidence intervals. (Default: 1000)
+#' @param ci_type (Optional) Type of bootstrap interval passed to
+#'  `boot::boot.ci()`. (Default: "perc")
+#' @export
+calc_ci.area_rarity <- function(x,
+                                indicator,
+                                num_bootstrap = 1000,
+                                ci_type = "perc",
+                                ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "area_rarity"))
+
+  year <- cellid <- taxonKey <- occupied_cells <- total_cells <- rarity <- NULL
+
+  # Calculate summed rarity for each cell each year (occupancy is calculated
+  # per year, matching calc_ts.area_rarity)
+  x <- x %>%
+    dplyr::distinct(year, cellid, taxonKey) %>%
+    dplyr::mutate(total_cells = dplyr::n_distinct(cellid), .by = year) %>%
+    dplyr::mutate(occupied_cells = dplyr::n(), .by = c(year, taxonKey)) %>%
+    dplyr::mutate(rarity = total_cells / occupied_cells) %>%
+    dplyr::summarise(diversity_val = sum(rarity), .by = c("year", "cellid")) %>%
+    dplyr::arrange(year)
+
+  # Put cell-based rarity values into a list organized by year
+  ind_list <- list_org_by_year(x, "diversity_val")
+
+  # Bootstrap indicator value
+  bootstraps <- ind_list %>%
+    purrr::map(~boot::boot(
+      data = .,
+      statistic = boot_statistic_mean,
+      R = num_bootstrap))
+
+  # Calculate confidence intervals and add to indicator values
+  ci <- calc_ci_core(bootstraps, indicator, ci_type, ...)
+
+  return(ci)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for species occurrences
+#' @param num_bootstrap (Optional) Set the number of bootstraps to calculate for
+#'  generating confidence intervals. (Default: 1000)
+#' @param ci_type (Optional) Type of bootstrap interval passed to
+#'  `boot::boot.ci()`. (Default: "perc")
+#' @export
+calc_ci.spec_occ <- function(x,
+                             indicator,
+                             num_bootstrap = 1000,
+                             ci_type = "perc",
+                             ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "spec_occ"))
+
+  taxonKey <- totobs <- obs <- year <- cellCode <- scientificName <- NULL
+
+  x <- x %>%
+    dplyr::arrange(taxonKey)
+
+  # Bootstrap species occurrence values
+  bootstraps <- x %>%
+    dplyr::summarize(totobs = sum(obs), .by = c(year, cellCode, taxonKey)) %>%
+    dplyr::group_by(taxonKey) %>%
+    dplyr::group_split() %>%
+    purrr::map(function(taxon_df) {
+      taxon_df %>%
+        dplyr::select(year, totobs, cellCode) %>%
+        dplyr::arrange(year) %>%
+        tidyr::pivot_wider(names_from = year,
+                           values_from = totobs,
+                           values_fill = 0) %>%
+        tibble::column_to_rownames("cellCode") %>%
+        purrr::map(function(year_data) {
+          boot::boot(
+            data = year_data,
+            statistic = boot_statistic_sum,
+            R = num_bootstrap
+          )
+        })
+    })
+
+  taxkeys <- unique(x$taxonKey)
+  scinames <- unique(x$scientificName)
+
+  # Calculate confidence intervals
+  ci_df_list <- list()
+  for (i in seq_along(bootstraps)) {
+
+    ci_df_list[[i]] <- get_bootstrap_ci(bootstraps[[i]], type = ci_type, ...)
+    if (length(ci_df_list[[i]]) > 0) {
+      ci_df_list[[i]]$taxonKey <- taxkeys[i]
+      ci_df_list[[i]]$scientificName <- scinames[i]
+
+    }
+  }
+
+  # Convert list to data frame
+  ci_df <- do.call(rbind, ci_df_list)
+
+  if (is.null(ci_df) || nrow(ci_df) == 0 || !all(c("year", "taxonKey", "scientificName") %in% names(ci_df))) {
+    ci_df <- data.frame(
+      year = numeric(),
+      taxonKey = character(),
+      scientificName = character(),
+      int_type = character(),
+      ll = numeric(),
+      ul = numeric(),
+      est_boot = numeric(),
+      se_boot = numeric(),
+      bias_boot = numeric(),
+      conf = numeric()
+    )
+  }
+
+  # Convert negative values to zero as rarity cannot be less than zero
+  ci_df$ll <- ifelse(ci_df$ll > 0, ci_df$ll, 0)
+
+  # Join confidence intervals to indicator values
+  indicator <- indicator %>%
+    dplyr::full_join(ci_df,
+                     by = dplyr::join_by(year, taxonKey, scientificName),
+                     relationship = "many-to-many")
+
+  return(indicator)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for species range
+#' @param num_bootstrap (Optional) Set the number of bootstraps to calculate for
+#'  generating confidence intervals. (Default: 1000)
+#' @param ci_type (Optional) Type of bootstrap interval passed to
+#'  `boot::boot.ci()`. (Default: "perc")
+#' @export
+calc_ci.spec_range <- function(x,
+                               indicator,
+                               num_bootstrap = 1000,
+                               ci_type = "perc",
+                               ...) {
+
+  stopifnot_error("Wrong data class. This is an internal function and is not
+                  meant to be called directly.",
+                  inherits(x, "spec_range"))
+
+  taxonKey <- obs <- observed <- year <- cellCode <- scientificName <- NULL
+
+  x <- x %>%
+    dplyr::arrange(taxonKey, year, cellCode)
+
+  # Bootstrap species range values
+  bootstraps <- x %>%
+    dplyr::summarize(observed = sum(obs >= 1),
+                     .by = c(taxonKey, year, cellCode)) %>%
+    dplyr::group_by(taxonKey) %>%
+    dplyr::group_split() %>%
+    purrr::map(function(taxon_df) {
+      taxon_df %>%
+        dplyr::select(year, observed, cellCode) %>%
+        dplyr::arrange(year) %>%
+        tidyr::pivot_wider(names_from = year,
+                           values_from = observed,
+                           values_fill = 0) %>%
+        tibble::column_to_rownames("cellCode") %>%
+        purrr::map(function(year_data) {
+          boot::boot(
+            data = year_data,
+            statistic = boot_statistic_sum,
+            R = num_bootstrap
+          )
+        })
+    })
+
+  taxkeys <- unique(x$taxonKey)
+  scinames <- unique(x$scientificName)
+
+  # Calculate confidence intervals
+  ci_df_list <- list()
+  for (i in seq_along(bootstraps)) {
+
+    ci_df_list[[i]] <- get_bootstrap_ci(bootstraps[[i]], type = ci_type, ...)
+    if (length(ci_df_list[[i]]) > 0) {
+      ci_df_list[[i]]$taxonKey <- taxkeys[i]
+      ci_df_list[[i]]$scientificName <- scinames[i]
+
+    }
+  }
+
+  # Convert list to data frame
+  ci_df <- do.call(rbind, ci_df_list)
+
+  if (is.null(ci_df) || nrow(ci_df) == 0 || !all(c("year", "taxonKey", "scientificName") %in% names(ci_df))) {
+    ci_df <- data.frame(
+      year = numeric(),
+      taxonKey = character(),
+      scientificName = character(),
+      int_type = character(),
+      ll = numeric(),
+      ul = numeric(),
+      est_boot = numeric(),
+      se_boot = numeric(),
+      bias_boot = numeric(),
+      conf = numeric()
+    )
+  }
+
+  # Convert negative values to zero as rarity cannot be less than zero
+  ci_df$ll <- ifelse(ci_df$ll > 0, ci_df$ll, 0)
+
+  # Join confidence intervals to indicator values
+  indicator <- indicator %>%
+    dplyr::full_join(ci_df,
+                     by = dplyr::join_by(year, taxonKey, scientificName),
+                     relationship = "many-to-many")
+
+  return(indicator)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for Hill0 (Richness)
+#' @export
+calc_ci.hill0 <- function(x,
+                          indicator,
+                          num_bootstrap = 1000,
+                          ...) {
+
+  year <- ll <- ul <- NULL
+
+  stopifnot_error("Wrong data class.", inherits(x, "hill0"))
+
+  # Call the ts calculation core with bootstrapping
+  ci_results <- calc_ts_hill_core(x, type = "hill0", nboot = num_bootstrap, ...)
+
+  # Join the confidence intervals to the original indicator
+  indicator <- indicator %>%
+    dplyr::left_join(ci_results %>% dplyr::select(year, ll, ul), by = "year")
+
+  return(indicator)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for Hill1 (Shannon)
+#' @export
+calc_ci.hill1 <- function(x,
+                          indicator,
+                          num_bootstrap = 1000,
+                          ...) {
+
+  year <- ll <- ul <- NULL
+
+  stopifnot_error("Wrong data class.", inherits(x, "hill1"))
+
+  # Call the ts calculation core with bootstrapping
+  ci_results <- calc_ts_hill_core(x, type = "hill1", nboot = num_bootstrap, ...)
+
+  # Join the confidence intervals to the original indicator
+  indicator <- indicator %>%
+    dplyr::left_join(ci_results %>% dplyr::select(year, ll, ul), by = "year")
+
+  return(indicator)
+
+}
+
+#' @describeIn calc_ci Calculate confidence intervals for Hill2 (Simpson)
+#' @export
+calc_ci.hill2 <- function(x,
+                          indicator,
+                          num_bootstrap = 1000,
+                          ...) {
+
+  year <- ll <- ul <- NULL
+
+  stopifnot_error("Wrong data class.", inherits(x, "hill2"))
+
+  # Call the ts calculation core with bootstrapping
+  ci_results <- calc_ts_hill_core(x, type = "hill2", nboot = num_bootstrap, ...)
+
+  # Join the confidence intervals to the original indicator
+  indicator <- indicator %>%
+    dplyr::left_join(ci_results %>% dplyr::select(year, ll, ul), by = "year")
+
+  return(indicator)
+
+}

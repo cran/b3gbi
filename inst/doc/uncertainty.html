@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="Shawn Dove" />
+
+
+<title>Uncertainty in Biodiversity Indicators</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Uncertainty in Biodiversity Indicators</h1>
+<h4 class="author">Shawn Dove</h4>
+
+
+
+<div id="introduction" class="section level2">
+<h2>Introduction 🛡️</h2>
+<p>Quantifying uncertainty is crucial for robust biodiversity
+assessments. The <strong>b3gbi</strong> package provides a flexible and
+powerful way to calculate confidence intervals (CIs) for biodiversity
+indicators using bootstrapping methods, leveraging the <a href="https://github.com/b-cubed-eu/dubicube"><strong>dubicube</strong></a>
+package for robust cube-level resampling.</p>
+<p><strong>dubicube</strong> is developed alongside
+<strong>b3gbi</strong> within the B-Cubed project and is installed from
+R-universe:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="st">&quot;dubicube&quot;</span>,</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>                 <span class="at">repos =</span> <span class="fu">c</span>(<span class="st">&quot;https://b-cubed-eu.r-universe.dev&quot;</span>,</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>                           <span class="st">&quot;https://cloud.r-project.org&quot;</span>))</span></code></pre></div>
+<p>If <strong>dubicube</strong> is not installed, <code>add_ci()</code>
+falls back to indicator-level bootstrapping (see below) and tells you
+so.</p>
+<p>To maintain a clean and efficient workflow, uncertainty calculation
+is decoupled from the initial indicator calculation. This “two-step”
+process allows users to first explore their data and indicators quickly,
+and then perform computationally intensive bootstrapping only when
+needed.</p>
+</div>
+<div id="the-two-step-workflow" class="section level2">
+<h2>The Two-Step Workflow</h2>
+<p>The standard workflow for adding uncertainty to an indicator is as
+follows:</p>
+<ol style="list-style-type: decimal">
+<li><strong>Calculate the Indicator</strong>: Use a time-series wrapper
+function (e.g., <code>total_occ_ts()</code>,
+<code>pielou_evenness_ts()</code>).</li>
+<li><strong>Add Confidence Intervals</strong>: Pass the resulting
+indicator object to the <code>add_ci()</code> function.</li>
+</ol>
+<div id="example-total-occurrences-with-uncertainty" class="section level3">
+<h3>Example: Total Occurrences with Uncertainty</h3>
+<p>In this example, we calculate total occurrences for mammals in
+Denmark and then add 95% confidence intervals using cube-level
+bootstrapping.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">library</span>(b3gbi)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="co"># 1. Process the cube</span></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>denmark_cube <span class="ot">&lt;-</span> <span class="fu">process_cube</span>(<span class="fu">system.file</span>(<span class="st">&quot;extdata&quot;</span>, </span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>                                         <span class="st">&quot;denmark_mammals_cube_eqdgc.csv&quot;</span>, </span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>                                         <span class="at">package =</span> <span class="st">&quot;b3gbi&quot;</span>))</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co"># 2. Calculate a time series of total occurrences</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co"># By default, CIs are NOT calculated during this step</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a>occ_ts <span class="ot">&lt;-</span> <span class="fu">total_occ_ts</span>(denmark_cube)</span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co"># 3. Add confidence intervals using add_ci()</span></span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a><span class="co"># With dubicube installed, this uses cube-level bootstrapping by default</span></span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a>occ_ts_with_ci <span class="ot">&lt;-</span> <span class="fu">add_ci</span>(occ_ts, <span class="at">num_bootstrap =</span> <span class="dv">100</span>) <span class="co"># Using 100 for speed in this example</span></span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a></span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="co"># 4. Plot the result</span></span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="fu">plot</span>(occ_ts_with_ci, <span class="at">title =</span> <span class="st">&quot;Total Occurrences with 95% CI&quot;</span>)</span></code></pre></div>
+</div>
+</div>
+<div id="bootstrapping-levels" class="section level2">
+<h2>Bootstrapping Levels</h2>
+<p>The <code>add_ci()</code> function supports two levels of
+bootstrapping, selectable via the <code>bootstrap_level</code> argument.
+The default, <code>bootstrap_level = &quot;auto&quot;</code>, uses cube-level
+bootstrapping when <strong>dubicube</strong> is installed and
+indicator-level bootstrapping otherwise. The level that was used is
+stored in the <code>ci_method</code> element of the result and shown
+when it is printed.</p>
+<div id="cube-level-bootstrapping-bootstrap_level-cube" class="section level3">
+<h3>1. Cube-Level Bootstrapping
+(<code>bootstrap_level = &quot;cube&quot;</code>)</h3>
+<p>This is the <strong>recommended method</strong> (and the default when
+<strong>dubicube</strong> is installed). It resamples the raw occurrence
+records within the data cube. The function automatically determines
+whether to use group-specific resampling (for total occurrences, where
+each year is resampled separately) or whole-cube resampling (for all
+other indicators, including the species-level ones) based on the
+indicator type.</p>
+<ul>
+<li><strong>Pros</strong>: Mathematically more robust; captures the
+underlying sampling uncertainty of the original data.</li>
+<li><strong>Cons</strong>: Computationally more intensive, especially
+for large cubes.</li>
+</ul>
+<p>It leverages the <code>dubicube</code> package to ensure that
+indicators are recalculated correctly for each bootstrap replicate.</p>
+</div>
+<div id="indicator-level-bootstrapping-bootstrap_level-indicator" class="section level3">
+<h3>2. Indicator-Level Bootstrapping
+(<code>bootstrap_level = &quot;indicator&quot;</code>)</h3>
+<p>This method resamples, within each year, the values the indicator is
+computed from (occurrence records, species, or grid cells) using the
+<strong>boot</strong> package, instead of recalculating the indicator on
+a resampled cube.</p>
+<ul>
+<li><strong>Pros</strong>: Very fast, even for massive datasets.</li>
+<li><strong>Cons</strong>: Less robust; treats these components as
+independent and identically distributed, which is often not strictly
+true for biodiversity data.</li>
+</ul>
+</div>
+</div>
+<div id="automatic-indicator-configuration" class="section level2">
+<h2>Automatic Indicator Configuration</h2>
+<p>The <code>add_ci()</code> function automatically applies appropriate
+bootstrapping strategies based on the indicator type. This ensures
+statistically correct confidence intervals without requiring manual
+configuration:</p>
+<ul>
+<li><p><strong>Group-Specific Bootstrapping</strong>: This method
+isolates resampling strictly within each grouping variable. For
+indicators like Total Occurrences (<code>total_occ</code>), which
+calculate a raw count per year, resampling only within that year
+provides mathematically correct variance without cross-contamination
+between years.</p></li>
+<li><p><strong>Whole-Cube Bootstrapping</strong>: This method resamples
+the entire dataset at once. This is automatically applied to aggregate
+indicators (evenness, rarity, density metrics) as well as species-level
+indicators (<code>spec_occ</code>, <code>spec_range</code>). For
+species-level indicators, whole-cube resampling is computationally
+optimized to process thousands of species simultaneously in a single
+pass while correctly capturing changes in species composition during
+resampling.</p></li>
+<li><p><strong>Bounded Indicators</strong>: Evenness metrics
+(<code>pielou_evenness</code>, <code>williams_evenness</code>)
+automatically use logit transformation to ensure confidence intervals
+remain within valid [0, 1] bounds.</p></li>
+</ul>
+<p>These defaults are applied internally (at cube level), but can be
+overridden using <code>boot_args</code> or <code>ci_args</code> (see
+below) if needed.</p>
+</div>
+<div id="advanced-configuration" class="section level2">
+<h2>Advanced Configuration</h2>
+<p>The <code>add_ci()</code> function provides several arguments for
+fine-tuning the CI calculation:</p>
+<table>
+<colgroup>
+<col width="31%" />
+<col width="40%" />
+<col width="28%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Argument</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>num_bootstrap</code></td>
+<td>Number of bootstrap replicates.</td>
+<td><code>1000</code></td>
+</tr>
+<tr class="even">
+<td><code>ci_type</code></td>
+<td>Type of bootstrap interval. See <a href="#types-of-confidence-intervals">Types of Confidence Intervals</a>
+below.</td>
+<td><code>&quot;perc&quot;</code></td>
+</tr>
+<tr class="odd">
+<td><code>confidence_level</code></td>
+<td>The confidence level (e.g., 0.95).</td>
+<td><code>0.95</code></td>
+</tr>
+<tr class="even">
+<td><code>seed</code></td>
+<td>Random seed for bootstrapping (the session’s random number state is
+restored afterwards).</td>
+<td><code>123</code></td>
+</tr>
+<tr class="odd">
+<td><code>trans</code> / <code>inv_trans</code></td>
+<td>Transformation applied before calculating the intervals, and its
+inverse.</td>
+<td>identity</td>
+</tr>
+<tr class="even">
+<td><code>boot_args</code></td>
+<td>A list of additional arguments for
+<code>dubicube::bootstrap_cube()</code> (cube level only).</td>
+<td><code>list()</code></td>
+</tr>
+<tr class="odd">
+<td><code>ci_args</code></td>
+<td>A list of additional arguments for
+<code>dubicube::calculate_bootstrap_ci()</code> (cube level only).</td>
+<td><code>list()</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="types-of-confidence-intervals" class="section level2">
+<h2>Types of Confidence Intervals</h2>
+<p>The <code>ci_type</code> argument allows you to choose between
+different methods for calculating bootstrap confidence intervals. At
+cube level these are passed to
+<code>dubicube::calculate_bootstrap_ci()</code>; at indicator level to
+<code>boot::boot.ci()</code>:</p>
+<ul>
+<li><strong>Percentile (<code>&quot;perc&quot;</code>)</strong>: (Default) The
+simplest and most commonly used method. It uses the ordered bootstrap
+replicates to find the intervals (e.g., the 2.5th and 97.5th percentiles
+for a 95% CI). It is transformation-invariant and generally robust for
+biodiversity indicators.</li>
+<li><strong>Bias-Corrected and Accelerated
+(<code>&quot;bca&quot;</code>)</strong>: An improvement over the percentile method
+that adjusts for both bias and skewness in the bootstrap distribution.
+It is highly recommended for accuracy but requires more
+computation.</li>
+<li><strong>Normal Approximation (<code>&quot;norm&quot;</code>)</strong>: Assumes
+the bootstrap distribution is approximately normal. It uses the standard
+error of the bootstrap replicates to calculate the interval. While fast,
+it may be less accurate for skewed distributions typical of biodiversity
+metrics.</li>
+<li><strong>Basic (<code>&quot;basic&quot;</code>)</strong>: Also known as the
+“reverse percentile” method. It uses the percentiles of the distribution
+of the difference between the bootstrap replicates and the original
+estimate.</li>
+</ul>
+<div id="customizing-the-bootstrap-process" class="section level3">
+<h3>Customizing the Bootstrap Process</h3>
+<p>The random seed, interval type and confidence level are set with the
+<code>seed</code>, <code>ci_type</code> and
+<code>confidence_level</code> arguments of <code>add_ci()</code>. If you
+need to pass other parameters to the underlying <code>dubicube</code>
+functions (cube level only), you can use the <code>boot_args</code> and
+<code>ci_args</code> parameters:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>occ_ts_custom <span class="ot">&lt;-</span> <span class="fu">add_ci</span>(occ_ts,</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>                        <span class="at">num_bootstrap =</span> <span class="dv">500</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>                        <span class="at">seed =</span> <span class="dv">42</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>                        <span class="at">ci_type =</span> <span class="st">&quot;perc&quot;</span>,</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>                        <span class="at">confidence_level =</span> <span class="fl">0.9</span>,</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>                        <span class="at">boot_args =</span> <span class="fu">list</span>(<span class="at">progress =</span> <span class="cn">TRUE</span>))</span></code></pre></div>
+</div>
+<div id="overriding-indicator-defaults" class="section level3">
+<h3>Overriding Indicator Defaults</h3>
+<p>While <code>add_ci()</code> automatically selects appropriate
+settings, you can override these defaults using <code>boot_args</code>
+and <code>ci_args</code>. This is useful when you need specialized
+behavior:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Example: Calculate CIs for evenness on raw scale (no logit transformation)</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>evenness_raw <span class="ot">&lt;-</span> <span class="fu">add_ci</span>(my_evenness_indicator,</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>                       <span class="at">num_bootstrap =</span> <span class="dv">1000</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>                       <span class="at">ci_args =</span> <span class="fu">list</span>(<span class="at">h =</span> identity,</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>                                      <span class="at">hinv =</span> identity))</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co"># Example: Force bias correction for total_occ</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>occ_with_bias <span class="ot">&lt;-</span> <span class="fu">add_ci</span>(my_occ_indicator,</span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>                        <span class="at">num_bootstrap =</span> <span class="dv">1000</span>,</span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>                        <span class="at">ci_args =</span> <span class="fu">list</span>(<span class="at">no_bias =</span> <span class="cn">FALSE</span>))</span></code></pre></div>
+<p>Common override parameters include:</p>
+<ul>
+<li><code>h</code> / <code>hinv</code> (in <code>ci_args</code>):
+Transformation functions (for evenness indicators, these override the
+default logit transformation)</li>
+<li><code>no_bias</code> (in <code>ci_args</code>): Logical, disable
+bias correction (default varies by indicator)</li>
+<li><code>group_specific</code> (in <code>boot_args</code>): Logical,
+force group-specific vs whole-cube bootstrapping</li>
+</ul>
+</div>
+</div>
+<div id="supported-indicators" class="section level2">
+<h2>Supported Indicators</h2>
+<p>Confidence intervals can be added post-hoc for the following
+indicators:</p>
+<ul>
+<li>Total Occurrences (<code>total_occ</code>)</li>
+<li>Occurrence Density (<code>occ_density</code>)</li>
+<li>Newness (<code>newness</code>)</li>
+<li>Williams Evenness (<code>williams_evenness</code>)</li>
+<li>Pielou Evenness (<code>pielou_evenness</code>)</li>
+<li>Abundance-based Rarity (<code>ab_rarity</code>)</li>
+<li>Area-based Rarity (<code>area_rarity</code>)</li>
+<li>Species Occurrences (<code>spec_occ</code>)</li>
+<li>Species Range (<code>spec_range</code>)</li>
+</ul>
+<div id="special-case-hill-diversity-indicators" class="section level3">
+<h3>Special Case: Hill Diversity Indicators</h3>
+<p>While most indicators rely on <code>dubicube</code> for calculating
+confidence intervals, the Hill diversity indicators (<code>hill0</code>,
+<code>hill1</code>, <code>hill2</code>) compute their metrics using the
+<code>iNEXT</code> package, which runs an intensive coverage-based
+rarefaction algorithm. <code>iNEXT</code> possesses its own highly
+optimized, native bootstrapping engine.</p>
+<p>When you pass a Hill indicator to <code>add_ci()</code>, the function
+will automatically detect it, bypass <code>dubicube</code>’s cube-level
+resampling to prevent computationally disastrous double-bootstrapping,
+and seamlessly delegate to <code>iNEXT</code>’s internal engine (forcing
+<code>bootstrap_level = &quot;indicator&quot;</code>).</p>
+</div>
+<div id="exclusions" class="section level3">
+<h3>Exclusions</h3>
+<p>Certain indicators cannot have confidence intervals added via
+<code>add_ci()</code>:</p>
+<ul>
+<li><strong>Observed Richness</strong> (<code>obs_richness</code>) and
+<strong>Species Richness Density</strong>
+(<code>spec_richness_density</code>): Bootstrapping observed occurrences
+can never discover unobserved species, so resampled richness is never
+above the observed value; consider using Hill numbers for estimated
+richness instead.</li>
+<li><strong>Sample Completeness</strong> (<code>completeness</code>): A
+deterministic coverage estimate; confidence intervals are not
+supported.</li>
+<li><strong>Relative Occupancy</strong>
+(<code>relative_occupancy</code>): Resampling occurrences cannot account
+for unoccupied grid cells, which are needed to calculate occupancy.</li>
+<li><strong>Cumulative Richness</strong> (<code>cum_richness</code>):
+The cumulative nature of this metric makes standard bootstrapping
+inappropriate.</li>
+<li><strong>Occurrence Turnover</strong> (<code>occ_turnover</code>):
+Similar to cumulative richness, the temporal dependency requires
+specialized methods.</li>
+<li><strong>Taxonomic Distinctness</strong> (<code>tax_distinct</code>):
+Requires specialized randomization tests rather than standard
+bootstrapping.</li>
+</ul>
+</div>
+</div>
+<div id="data-exploration-with-dubicube" class="section level2">
+<h2>Data Exploration with dubicube 🔍</h2>
+<p>While <strong>b3gbi</strong> focuses on indicator calculation and
+visualization, the underlying <strong>dubicube</strong> package offers
+powerful functions for initial data exploration and quality assessment
+of your biodiversity data cubes.</p>
+<p>To learn more about the full capabilities of
+<strong>dubicube</strong>, including in-depth tutorials and advanced
+data processing techniques, please visit the <a href="https://docs.b-cubed.eu/software/dubicube/readme/">dubicube
+documentation</a>.</p>
+</div>
+<div id="summary" class="section level2">
+<h2>Summary</h2>
+<p>The <code>add_ci()</code> function provides a unified and robust
+interface for adding uncertainty to your biodiversity assessments. By
+leveraging the power of <code>dubicube</code>, <strong>b3gbi</strong>
+ensures that your results are not just numbers, but scientifically
+grounded estimates with clearly defined confidence boundaries.</p>
+<p>With automatic indicator configuration, most users can rely on
+sensible defaults while advanced users retain full control over the
+bootstrapping process through the <code>boot_args</code> and
+<code>ci_args</code> parameters.</p>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

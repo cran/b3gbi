@@ -1,0 +1,109 @@
+#' @noRd
+add_ne_layer <- function(layer_name, scale, extent_projected) {
+
+  geometry <- featurecla <- scalerank <- type <- geom <- NULL
+
+  if (scale == "large" && !is_package_installed("rnaturalearthhires")) {
+    stop("Package 'rnaturalearthhires' is required for large scale (10m) map data. ",
+         "Please install it or use scale = 'medium' or 'small'.")
+  }
+
+  if (layer_name == "admin_0_countries") {
+    # Use the robust ne_countries function for the base layer
+    # The ne_countries function handles downloading the data if it doesn't exist
+    layer_raw <- rnaturalearth::ne_countries(scale = scale,
+                                             returnclass = "sf")
+  } else {
+
+    # --- Dynamic Category Lookup ---
+    # Combine physical and cultural layer info
+    all_layers_info <- rbind(
+      rnaturalearth::df_layers_physical %>%
+        dplyr::mutate(category = "physical",
+                      type = layer),
+      rnaturalearth::df_layers_cultural %>%
+        dplyr::mutate(category = "cultural",
+                      type = layer)
+    )
+
+    # Map 'scale' argument to the column names in df_layers_X for availability
+    # check
+    scale_col <- switch(
+      scale,
+      "large" = "scale10",
+      "medium" = "scale50",
+      "small" = "scale110",
+      stop("Unsupported scale. Choose 'small', 'medium', or 'large'.")
+    )
+
+    # Filter to find the layer and its category at the specified scale
+    layer_info <- all_layers_info %>%
+      dplyr::filter(type == layer_name) %>%
+      dplyr::filter(!!rlang::sym(scale_col) == 1)
+
+    if (nrow(layer_info) == 0) {
+      stop(paste0(
+        "Layer '", layer_name, "' not found or not available at scale '",
+        scale, "'. Please check rnaturalearth::df_layers_physical and ",
+        "rnaturalearth::df_layers_cultural."))
+    }
+    # Assuming unique layer_name + scale combination yields a single category
+    category <- layer_info$category[1]
+    # --- End Dynamic Category Lookup ---
+
+
+    # Step 1: Use tryCatch ONLY for the loading/downloading part
+    layer_raw <- tryCatch({
+      rnaturalearth::ne_load(scale = scale,
+                             returnclass = "sf",
+                             type = layer_name,
+                             category = category)
+    }, error = function(e) {
+      # Use the condition message and allow for line breaks, as rnaturalearth
+      # wraps its error messages over several lines
+      err_msg <- conditionMessage(e)
+      if (grepl("seems\\s+not\\s+to\\s+exist", err_msg, ignore.case = TRUE) ||
+          grepl("Failed\\s+to\\s+download", err_msg, ignore.case = TRUE) ||
+          grepl("HTTP\\s+status\\s+was\\s+404", err_msg, ignore.case = TRUE)) {
+        message(paste0("Attempting to download '", layer_name, "' data."))
+        rnaturalearth::ne_download(scale = scale,
+                                   returnclass = "sf",
+                                   type = layer_name,
+                                   category = category,
+                                   load = FALSE)
+        rnaturalearth::ne_load(scale = scale,
+                               returnclass = "sf",
+                               type = layer_name,
+                               category = category)
+      } else {
+        stop(e) # Re-throw other unhandled errors
+      }
+    })
+
+    if ("geom" %in% names(layer_raw)) {
+      layer_raw <- dplyr::rename(layer_raw, geometry = geom)
+    }
+
+  }
+
+  # extent_projected <- sf::st_transform(sf::st_as_sfc(extent_projected),
+  #                                      crs = "ESRI:54012")
+
+  # Crop layer to the extent for efficiency
+  # Use st_crop directly on the sf object to preserve individual features
+  # (previous group_by/reframe approach destroyed per-country geometries)
+  sf::st_agr(layer_raw) <- "constant"
+  processed_layer <- tryCatch({
+    suppressMessages(sf::st_crop(layer_raw, extent_projected))
+  }, error = function(e) {
+    layer_raw %>%
+      sf::st_make_valid() %>%
+      suppressMessages(sf::st_crop(extent_projected))
+  })
+
+  # Filter out empty geometries
+  processed_layer <- processed_layer %>%
+    dplyr::filter(!sf::st_is_empty(geometry))
+
+  return(processed_layer)
+}

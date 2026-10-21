@@ -1,0 +1,269 @@
+#' @title Plot Occurrence Map or Range Map of Individual Species
+#'
+#' @description Creates map visualizations of species ranges or species
+#'  occurrences. Requires an indicator_map object created using the
+#'  \code{spec_occ_map()} or \code{spec_range_map()} functions as input. It is
+#'  also the function called by \code{plot()} for species-level maps, including
+#'  those created with \code{relative_occupancy_map()}. To plot multi-species
+#'  indicators (e.g., species richness or evenness), use the \code{plot_map()}
+#'  function instead.
+#'
+#' @inheritParams plot_map
+#'
+#' @param x An 'indicator_map' object containing indicator values for individual
+#'  species associated with map grid cells. This object is typically created
+#'  using the \code{spec_occ_map()}, \code{spec_range_map()} or
+#'  \code{relative_occupancy_map()} functions. This is a required parameter
+#'  with no default.
+#' @param species Species you want to map. Can be either numerical taxonKeys
+#'  or species names. Partial species names can be given as the beginning of
+#'  a name (prefix match). This is a required parameter with no default.
+#' @param single_plot (Optional) If TRUE, all species maps will be combined
+#'  into a single multi-panel plot. Set this to FALSE to plot each species
+#'  separately. Default is TRUE.
+#' @param suppress_legend (Optional) Do not show legend. This defaults to FALSE
+#'  but will be forcibly set to TRUE when plotting species ranges, as all cell
+#'  values are 1.
+#' @param spec_name_wrap_length (Optional) Maximum species name length before
+#'  wrapping to a new line. Default: 40 characters.
+#' @param map_expansion_factor (Optional) Factor to expand the map limits
+#' beyond the grid limits. This does NOT expand the boundaries of the plot, it
+#' only affects where the crop is applied. If this value is too small, some
+#' land may be visibly cut off due to map distortion caused by projections. A
+#' larger value will extend the bounding box for cropping to prevent this.
+#' Must be a positive number. Default is 0.5. You can increase this value if
+#' you are using an extreme projection and find that some land is visibly cut
+#' off.
+#'
+#' @return If single_plot = TRUE (default), a patchwork object combining one
+#'  ggplot per species. If single_plot = FALSE, a named list of ggplot objects
+#'  (one per species). These can be customized using ggplot2 and patchwork
+#'  functions. Requires the 'patchwork' package.
+#'
+#' @examples
+#' \donttest{
+#' if (requireNamespace("patchwork", quietly = TRUE)) {
+#'   spec_occ_mammals_denmark <- spec_occ_map(example_cube_1,
+#'     level = "country",
+#'     region = "Denmark"
+#'   )
+#'   plot_species_map(x = spec_occ_mammals_denmark, c(2440728, 4265185))
+#' }
+#' }
+#'
+#' @export
+plot_species_map <- function(x,
+                             species,
+                             single_plot = TRUE,
+                             title = "auto",
+                             auto_title = NULL,
+                             leg_label_default = NULL,
+                             suppress_legend = FALSE,
+                             xlims = NULL,
+                             ylims = NULL,
+                             trans = NULL,
+                             bcpower = NULL,
+                             breaks = NULL,
+                             labels = NULL,
+                             output_crs = NULL,
+                             crop_to_grid = NULL,
+                             crop_by_region = FALSE,
+                             ocean_fill_colour = NULL,
+                             land_fill_colour = NULL,
+                             grid_fill_colour = NULL,
+                             grid_line_colour = NULL,
+                             grid_line_width = NULL,
+                             grid_fill_transparency = NULL,
+                             grid_line_transparency = NULL,
+                             legend_title = NULL,
+                             legend_limits = NULL,
+                             legend_title_wrap_length = 10,
+                             title_wrap_length = 60,
+                             spec_name_wrap_length = 40,
+                             visible_gridlines = TRUE,
+                             visible_panel_gridlines = FALSE,
+                             map_expansion_factor = 0.5,
+                             layers = NULL,
+                             layer_colours = NULL,
+                             layer_fill_colours = NULL,
+                             scale = c("medium", "small", "large"),
+                             filter_outliers = FALSE) {
+  # Check if patchwork package is installed
+  if (!is_package_installed("patchwork")) {
+    stop("The 'patchwork' package is required for this function.
+         Please install it using: install.packages('patchwork')",
+         call. = FALSE)
+  }
+
+  # Set variable definitions to NULL where required
+  geometry <- diversity_val <- map_surround <- layer_list <- map_lims <- NULL
+
+  # Match arguments
+  scale <- match.arg(scale)
+
+  # Set CRS for the plot
+  if (!is.null(output_crs)) {
+    # If output CRS is provided, check if it is valid and then use it
+    check_crs_units(output_crs)
+    projection <- output_crs
+  } else {
+    # Otherwise, use the projection from the indicator_map object
+    projection <- x$projection
+  }
+
+  # Check that the object is the correct class
+  wrong_class(x, "indicator_map", reason = "incorrect")
+
+  # Set suppress_legend to TRUE if plotting a range map
+  if (inherits(x, "spec_range")) suppress_legend <- TRUE
+
+  if (is.null(crop_to_grid)) {
+    crop_to_grid <- if (x$map_level == "cube") TRUE else FALSE
+  }
+
+  if (crop_by_region == TRUE &&
+    any(x$map_region %in% c("cube", "world"))) {
+    stop("crop_by_region is set to TRUE, but no region was specified when
+         calculating the indicator_map. Please recalculate the indicator_map
+         with a region specified.")
+  }
+
+  # Check that layers, layer_colours, and layer_fill_colours are same length
+  if (length(layer_colours) != length(layers) && !is.null(layer_colours)) {
+    stop("If layer_colours is provided, it must be the same length as layers.")
+  }
+  if (length(layer_fill_colours) != length(layers) &&
+    !is.null(layer_fill_colours)) {
+    stop(
+      "If layer_fill_colours is provided, it must be the same length as layers."
+    )
+  }
+
+  # Name layer colours by layer so each colour is matched to its layer
+  if (!is.null(layer_colours)) names(layer_colours) <- layers
+  if (!is.null(layer_fill_colours)) names(layer_fill_colours) <- layers
+
+  # Get plot title (if set to "auto")
+  title <- if (title == "auto") auto_title else title
+
+  # Check that species argument has been provided
+  if (is.null(species)) {
+    stop(paste0(
+      "Please enter either the species names or the numeric taxonKeys for ",
+      "the species you want to plot."
+    ))
+  }
+
+  # Split data by species
+  split_so <- if (is.numeric(species) || all(as.character(species) %in% x$data$taxonKey)) {
+    get_occurrences_and_split(x$data, "taxonKey", species)
+  } else {
+    get_occurrences_and_split(x$data, "scientificName", species)
+  }
+
+  # Get unique species names for plot labeling
+  sci_names <- split_so %>% purrr::map(function(y) unique(y$scientificName))
+
+  # Filter spatial outliers if requested
+  if (filter_outliers) {
+    # Extract coordinates from the geometry centroids
+    coords <- do.call(rbind, lapply(sf::st_geometry(x$data), function(geom) {
+      sf::st_coordinates(sf::st_centroid(geom))
+    }))
+
+    qx <- stats::quantile(coords[, 1], probs = c(0.25, 0.75), na.rm = TRUE)
+    qy <- stats::quantile(coords[, 2], probs = c(0.25, 0.75), na.rm = TRUE)
+    iqr_x <- qx[2] - qx[1]
+    iqr_y <- qy[2] - qy[1]
+
+    # Use 3 IQR for extreme outliers
+    keep <- coords[, 1] >= (qx[1] - 3 * iqr_x) &
+      coords[, 1] <= (qx[2] + 3 * iqr_x) &
+      coords[, 2] >= (qy[1] - 3 * iqr_y) &
+      coords[, 2] <= (qy[2] + 3 * iqr_y)
+
+    x$data <- x$data[keep, ]
+
+    # Recalculate original bbox based on the filtered data
+    x$coord_range <- sf::st_bbox(x$data)[c("xmin", "ymin", "xmax", "ymax")]
+    x$original_bbox <- sf::st_as_sfc(sf::st_bbox(x$data))
+
+    # Recalculate split_so because the base data was filtered
+    split_so <- if (is.numeric(species)) {
+      get_occurrences_and_split(x$data, "taxonKey", species)
+    } else {
+      get_occurrences_and_split(x$data, "scientificName", species)
+    }
+  }
+
+  # Prepare data and layers for plotting
+  map_data_list <- prepare_map_for_plot(
+    x, xlims, ylims, layers, scale, crop_to_grid, crop_by_region, projection,
+    map_expansion_factor
+  )
+
+  # Unpack the list
+  list2env(map_data_list, envir = environment())
+
+  # Set default grid line width based on grid type
+  if (is.null(grid_line_width)) {
+    grid_line_width <- if (!is.null(x$grid_type) && x$grid_type == "isea3h") 0.5 else 0.1
+  }
+
+  # Create the plots for each species using the helper function
+  plot <- purrr::map(seq_along(sci_names), function(i) {
+    create_map_plot(
+      data = split_so[[i]],
+      map_surround = map_surround,
+      layer_list = layer_list,
+      layer_colours = layer_colours,
+      layer_fill_colours = layer_fill_colours,
+      land_fill_colour = land_fill_colour,
+      ocean_fill_colour = ocean_fill_colour,
+      grid_fill_colour = grid_fill_colour,
+      grid_line_colour = grid_line_colour,
+      grid_line_width = grid_line_width,
+      grid_fill_transparency = grid_fill_transparency,
+      grid_line_transparency = grid_line_transparency,
+      trans = trans,
+      bcpower = bcpower,
+      breaks = breaks,
+      labels = labels,
+      legend_limits = legend_limits,
+      map_level = x$map_level,
+      visible_gridlines = visible_gridlines,
+      visible_panel_gridlines = visible_panel_gridlines,
+      crop_to_grid = crop_to_grid,
+      map_lims = map_lims,
+      map_lims_original = x$coord_range,
+      projection = projection,
+      leg_label_default = leg_label_default,
+      legend_title = legend_title,
+      legend_title_wrap_length = legend_title_wrap_length,
+      suppress_legend = suppress_legend,
+      title_label = wrapper(sci_names[[i]], spec_name_wrap_length),
+      title_face = "italic"
+    )
+  })
+
+  # Name each plot with the corresponding species name
+  names(plot) <- sci_names
+
+  # Combine plots using wrap_plots function from patchwork
+  if ((length(plot) > 0 && single_plot == TRUE) || length(plot) == 0) {
+    plot <- patchwork::wrap_plots(plot) +
+      patchwork::plot_annotation(
+        title = wrapper(title, title_wrap_length),
+        theme = theme(plot.title = element_text(size = 20))
+      )
+    # Or create each plot separately if single_plot is FALSE
+  } else if (length(plot) > 1 && single_plot == FALSE) {
+    message(paste0(
+      "Option single_plot set to false. Creating separate plot for each ",
+      "species.\n\n"
+    ))
+  }
+
+  # Exit function
+  return(plot)
+}

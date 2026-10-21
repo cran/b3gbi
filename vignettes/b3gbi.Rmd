@@ -1,0 +1,195 @@
+---
+title: "A Gentle Introduction to b3gbi: Data Cubes to Biodiversity Indicators"
+author: "Shawn Dove"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{A Gentle Introduction to b3gbi: Data Cubes to Biodiversity Indicators}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 8,
+  fig.height = 6,
+  out.width = "95%"
+)
+```
+
+## Introduction
+
+The goal of the **b3gbi** package (B3 General Biodiversity Indicators) is to provide standardized, automated, and reproducible workflows for calculating essential spatial and temporal biodiversity indicators. Developed as part of the EU-funded B3 (Biodiversity Building Blocks for Policy) project, b3gbi takes pre-processed GBIF occurrence cubes as input and quickly transforms them into actionable metrics, including richness, evenness, rarity, taxonomic distinctness, Hill-Shannon diversity, Hill-Simpson diversity, and completeness, complete with integrated uncertainty estimation using robust bootstrapping methods.
+
+This tutorial will guide you through the three core steps of the b3gbi workflow:
+
+1. **Data Ingestion**: Preparing your GBIF data cube with `process_cube()`.
+2. **Indicator Calculation**: Using indicator-specific wrapper functions.
+3. **Visualization**: Plotting the results as maps or time series using the generic `plot()` function.
+
+The package is publicly available at <https://github.com/b-cubed-eu/b3gbi>.
+
+## Package Installation
+
+The package is available on the dedicated B-Cubed R-universe repository.
+
+```{r install, eval = FALSE}
+# Install the package from the dedicated R-universe
+install.packages("b3gbi", repos = "https://b-cubed-eu.r-universe.dev")
+
+# Load the package
+library(b3gbi)
+```
+
+```{r load, echo = FALSE}
+library(b3gbi)
+```
+
+## Step 1: Data Ingestion with `process_cube()`
+
+The first step is importing your GBIF occurrence cube (a .csv file) and converting it into a structured `processed_cube` object. This function automatically validates the input and attempts to autodetect column names and grid types.
+
+To learn how to generate and download a compatible GBIF data cube, see the [B-Cubed tutorial on downloading a cube from GBIF](https://docs.b-cubed.eu/tutorials/download-a-cube-from-gbif/).
+
+### Key `process_cube()` Arguments
+
+| Argument | Description | Default/Details |
+|----------|-------------|-----------------|
+| `cube_name` | Path to the .csv file containing the GBIF cube, or a data frame. Required. | |
+| `grid_type` | The grid system used: 'automatic', 'eea', 'mgrs', 'eqdgc', 'isea3h', 'custom' or 'none'. | 'automatic' (default) autodetects the grid from the cell codes. Use 'custom' for custom grid codes or 'none' for a cube without grid codes. |
+| `first_year` | Filters the cube to start at this year. | NULL (default) uses the earliest year in the data. |
+| `last_year` | Filters the cube to end at this year. | NULL (default) uses the latest year in the data. |
+
+**Note on Column Names**: The function automatically attempts to detect required columns (like cell code, year, species key). You only need to manually specify arguments like `cols_year` or `cols_cellCode` if your column names deviate from expected standards.
+
+### Example: Import Data and Filter by Time
+
+Here we import an example cube of mammals in Denmark, filtering the data to start from 1980.
+
+```{r process-cube}
+# Function 1: process_cube()
+denmark_cube <- process_cube(
+  system.file("extdata",
+    "denmark_mammals_cube_eqdgc.csv",
+    package = "b3gbi"
+  ),
+  first_year = 1980
+) # Filter the cube to start at 1980
+
+# Printing the object shows key metadata
+denmark_cube
+```
+
+The data itself is stored in a tibble within the object's `data` slot, and the rest is metadata.
+
+```{r structure}
+str(denmark_cube)
+```
+
+## Step 2: Indicator Calculation
+
+The package provides numerous wrappers to calculate indicators as either **maps** (spatial distribution) or **time series** (temporal trends).
+
+### Available Indicators
+
+Use `available_indicators` to see the full list of indicators and their associated wrapper functions (e.g., `obs_richness_map`, `total_occ_ts`). 
+
+```{r available-indicators}
+available_indicators
+```
+
+### Core Arguments for Wrapper Functions
+
+All indicator wrapper functions (e.g., `obs_richness_map`, `occ_turnover_ts`) share the following key arguments:
+
+| Argument | Description | Details |
+|----------|-------------|---------|
+| `data` | The `processed_cube` object. Required. | |
+| `level` | The spatial level: 'cube', 'continent', 'country', 'world', 'sovereignty' or 'geounit'. | 'cube' (default) uses the extent of the cube; other levels automatically retrieve boundaries from Natural Earth. |
+| `region` | The specific region name (e.g., 'Germany', 'Europe'). | Used when level is 'continent', 'country', 'sovereignty' or 'geounit' (default "Europe"). |
+
+### Example: Observed Species Richness Map
+
+Let's calculate the observed richness spatially, covering the period from 1980 to the end of the cube's data.
+
+```{r richness-map}
+# Calculate a gridded map of observed species richness for Denmark
+# Note that confidence intervals are not calculated for map indicators
+Denmark_observed_richness_map <- obs_richness_map(denmark_cube, 
+                                                   level = "country", 
+                                                   region = "Denmark") 
+```
+
+The result is an `indicator_map` object (the data within it is also an `sf` object, containing geographical information).
+
+```{r map-class}
+class(Denmark_observed_richness_map)
+class(Denmark_observed_richness_map$data)
+```
+
+### Example: Total Occurrences Time Series
+
+Now, let's calculate an indicator over time: the total number of occurrences per year.
+
+```{r total-occ-ts}
+# Calculate a time series of total occurrences for Denmark
+# By default, confidence intervals are NOT calculated during this step
+Denmark_total_occ_ts <- total_occ_ts(denmark_cube, 
+                                     level = "country", 
+                                     region = "Denmark")
+```
+
+The result is an `indicator_ts` object.
+
+```{r ts-class}
+class(Denmark_total_occ_ts)
+```
+
+Now let's add confidence intervals using the `add_ci()` function. To speed things up we will reduce the number of bootstrap samples from the default of 1000 to 100. By default, the package uses **percentile** intervals (`"perc"`), which are robust for biodiversity indicators. If the **dubicube** package is installed, `add_ci()` resamples the occurrence records in the cube (cube-level bootstrapping); otherwise it falls back to faster indicator-level bootstrapping.
+
+```{r add-ci}
+# Add confidence intervals to the time series
+Denmark_total_occ_ts_with_ci <- add_ci(Denmark_total_occ_ts, 
+                                       num_bootstrap = 100)
+```
+
+For more in-depth information on how uncertainty is handled, the different types of confidence intervals available, and advanced configuration options, please see the [Uncertainty in Biodiversity Indicators](uncertainty.html) vignette.
+
+
+## Step 3: Visualization with `plot()`
+
+The generic `plot()` function automatically calls the appropriate helper function (`plot_map()` or `plot_ts()`) and applies smart defaults for titles, colors, and layout.
+
+### Plotting the Map
+
+| Argument | Description | Common Use |
+|----------|-------------|------------|
+| `title` | Sets the plot title. | e.g., "Observed Richness in Denmark" |
+| `legend_title` | Sets the legend title. | e.g., "Number of Species" |
+| `crop_to_grid` | If TRUE, the map edges are determined by the grid extent. | |
+| `crop_by_region` | If TRUE, map edges are determined by the map region selected during indicator calculation, rather than the data. | |
+
+```{r plot-map}
+# Plotting the map object
+plot(Denmark_observed_richness_map,
+  legend_title = "Mammal Species Count",
+  title = "Observed Mammal Richness (1980-Present)"
+)
+```
+
+### Plotting the Time Series
+
+If your `indicator_ts` object contains confidence intervals, the `plot()` function will automatically display them as ribbons or error bars.
+
+```{r plot-ts}
+# Plotting the time series object (with confidence intervals)
+plot(Denmark_total_occ_ts_with_ci,
+  title = "Temporal Trend of Total Mammal Occurrences in Denmark",
+  linecolour = "blue",
+  ribboncolour = "skyblue",
+  trendlinecolour = "darkorange",
+  envelopecolour = "orange",
+  smoothed_trend = TRUE
+)
+```

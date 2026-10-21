@@ -1,0 +1,104 @@
+#' Calculate confidence intervals for list of `boot` objects
+#'
+#' This function calculates confidence intervals for a list of objects of class
+#' `"boot"` per year into a dataframe containing all required summaries.
+#' It is used internally for indicator-level bootstrapping.
+#'
+#' @param bootstrap_list A list of objects of class `"boot"` per year.
+#' @param temporal_list_name (Optional) The temporal list names of
+#'  `bootstrap_list` (e.g., year, month ...) containing time point values.
+#'  Default `year`.
+#' @param ... Additional argument to be passed to the `boot::boot.ci()`
+#' function.
+#'
+#' @return The returned value is a dataframe containing the time point,
+#' the type of interval (`int_type`; one of `"perc"`, `"bca"`, `"norm"` or
+#' `"basic"`, as in `boot::boot.ci()`'s `type` argument), the lower limit of
+#' the confidence interval (`ll`), the upper limit of the confidence interval
+#' (`ul`), the bootstrap estimate (`est_boot`), the bootstrap standard error
+#' (`se_boot`), the bootstrap bias (`bias_boot`), and the confidence level of
+#' the intervals (`conf`).
+#'
+#' @keywords internal
+get_bootstrap_ci <- function(bootstrap_list,
+                             temporal_list_name = "year",
+                             ...) {
+  # Calculate nonparametric confidence intervals
+  conf_ints <- lapply(bootstrap_list, function(b) {
+    tryCatch(
+      {
+        boot::boot.ci(b, ...)
+      },
+      error = function(e) {
+        NULL
+      }
+    )
+  })
+
+  # Remove null values
+  conf_ints[sapply(conf_ints, is.null)] <- NULL
+
+  # Exit if there are no values
+  if (length(conf_ints) == 0) {
+    return(data.frame())
+  }
+
+  # Get interval names
+  indices_to_remove <- match(c("R", "t0", "call"), names(conf_ints[[1]]))
+  interval_types <- names(conf_ints[[1]])[-indices_to_remove]
+
+  # Get confidence level
+  conf_level <- conf_ints[[1]][[interval_types[1]]][1]
+
+  # Names of the interval types as used in boot::boot.ci(type = ...)
+  type_names <- c(normal = "norm", basic = "basic", student = "stud",
+                  percent = "perc", bca = "bca")
+
+  # Summarise for each confidence interval upper and lower limits in dataframes
+  out_list <- vector(mode = "list", length = length(interval_types))
+  for (i in seq_along(interval_types)) {
+    type <- interval_types[i]
+
+    ll <- sapply(conf_ints, function(list) {
+      vec <- list[[type]]
+      vec[length(vec) - 1]
+    })
+    ul <- sapply(conf_ints, function(list) {
+      vec <- list[[type]]
+      vec[length(vec)]
+    })
+
+    # Extract bootstrap summaries from original bootstrap list
+    est_boot <- sapply(names(conf_ints), function(name) {
+      mean(bootstrap_list[[name]]$t, na.rm = TRUE)
+    })
+    se_boot <- sapply(names(conf_ints), function(name) {
+      sd(bootstrap_list[[name]]$t, na.rm = TRUE)
+    })
+    bias_boot <- est_boot - sapply(names(conf_ints), function(name) {
+      bootstrap_list[[name]]$t0
+    })
+
+    out_list[[i]] <- data.frame(
+      time_point = as.numeric(names(conf_ints)),
+      int_type = if (type %in% names(type_names)) type_names[[type]] else type,
+      ll = ll,
+      ul = ul,
+      est_boot = est_boot,
+      se_boot = se_boot,
+      bias_boot = bias_boot)
+  }
+
+  # Create combined dataframe
+  conf_df_out <- do.call(rbind.data.frame, out_list) %>%
+    tidyr::complete(
+      "time_point" = as.numeric(names(bootstrap_list)),
+      .data$int_type
+    ) %>%
+    dplyr::arrange(.data$time_point, .data$int_type) %>%
+    dplyr::mutate(conf = conf_level) %>%
+    dplyr::rename({{ temporal_list_name }} := "time_point")
+  rownames(conf_df_out) <- NULL
+
+  return(conf_df_out)
+}

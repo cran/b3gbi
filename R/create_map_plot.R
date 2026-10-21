@@ -1,0 +1,219 @@
+#' @noRd
+create_map_plot <- function(data,
+                            map_surround,
+                            layer_list,
+                            layer_colours,
+                            layer_fill_colours,
+                            land_fill_colour,
+                            ocean_fill_colour,
+                            grid_fill_colour,
+                            grid_line_colour,
+                            grid_line_width,
+                            grid_fill_transparency,
+                            grid_line_transparency,
+                            trans,
+                            bcpower,
+                            breaks,
+                            labels,
+                            legend_limits,
+                            map_level,
+                            visible_gridlines,
+                            visible_panel_gridlines,
+                            crop_to_grid,
+                            map_lims,
+                            map_lims_original,
+                            projection,
+                            leg_label_default,
+                            legend_title,
+                            legend_title_wrap_length,
+                            suppress_legend,
+                            title_label,
+                            title_face = "plain") {
+  # Set necessary variables to NULL to avoid R CMD check notes
+  geometry <- diversity_val <- NULL
+
+  # Set default values
+  ocean_fill_colour <- ocean_fill_colour %||% "#92c5f0"
+  land_fill_colour <- land_fill_colour %||% "grey85"
+  grid_fill_colour <- grid_fill_colour %||% "transparent"
+  grid_line_colour <- if (visible_gridlines) {
+    grid_line_colour %||% "black"
+  } else {
+    "transparent"
+  }
+  grid_line_width <- grid_line_width %||% 0.1
+  grid_fill_transparency <- if (visible_gridlines) {
+    grid_fill_transparency %||% 0.2
+  } else {
+    grid_fill_transparency %||% 0
+  }
+  grid_line_transparency <- if (visible_gridlines) {
+    grid_line_transparency %||% 0.5
+  } else {
+    0
+  }
+
+  # Drop any layers that could not be loaded (e.g. empty after cropping)
+  layer_list <- layer_list[!vapply(layer_list, is.null, logical(1))]
+
+  # Look up the outline and fill colours for each layer by name. The default
+  # land layer ("admin_0_countries") is always drawn with a black outline and
+  # no fill; user-supplied colours (named by layer in plot_map() and
+  # plot_species_map()) apply to the additional layers.
+  get_layer_colour <- function(layer_name, colours, default) {
+    if (!is.null(colours) && layer_name %in% names(colours)) {
+      colours[[layer_name]]
+    } else {
+      default
+    }
+  }
+
+  # Colour for empty grid cells (cells with no indicator value). Note that
+  # alpha() would turn "transparent" into semi-transparent white, so keep
+  # the default "transparent" as is.
+  na_fill_colour <- if (is.na(grid_fill_colour) ||
+                        identical(grid_fill_colour, "transparent")) {
+    "transparent"
+  } else {
+    alpha(grid_fill_colour, grid_fill_transparency)
+  }
+
+  # Define function to modify legend
+  cust_leg <- function(scale.params = list()) {
+    do.call("scale_fill_gradient", modifyList(
+      list(low = "gold", high = "firebrick4", na.value = na_fill_colour),
+      scale.params
+    ))
+  }
+
+  # Set up transformation if specified
+  if (!is.null(trans)) {
+    if (trans == "boxcox") {
+      trans <- scales::transform_boxcox(p = bcpower)
+    } else if (trans == "modulus") {
+      trans <- scales::transform_modulus(p = bcpower)
+    } else if (trans == "yj") {
+      trans <- scales::transform_yj(p = bcpower)
+    }
+  }
+
+  # Transform data to the chosen projection
+  data <- sf::st_transform(data, crs = projection)
+
+  ###################################
+  # Create plot in steps using ggplot
+  ###################################
+
+  # Step 1: Create blank plot to fill
+  plot <- ggplot2::ggplot(data)
+
+  # Step 2: Add the land data
+  plot <- plot +
+    ggplot2::geom_sf(
+      data = map_surround,
+      fill = land_fill_colour,
+      colour = "black",
+      aes(geometry = geometry),
+      inherit.aes = FALSE
+    )
+
+  # Step 3: Add additional layers, with ocean and lakes in blue
+  for (i in seq_along(layer_list)) {
+    layer_data <- layer_list[[i]]
+    layer_name <- names(layer_list)[[i]]
+    default_fill <- if (layer_name %in% c("ocean", "lakes")) {
+      "#92c5f0"
+    } else {
+      "transparent"
+    }
+    layer_fill_colour <- get_layer_colour(layer_name, layer_fill_colours,
+                                          default_fill)
+    layer_colour <- get_layer_colour(layer_name, layer_colours, "black")
+
+    plot <- plot +
+      ggplot2::geom_sf(
+        data = layer_data,
+        aes(geometry = geometry),
+        fill = layer_fill_colour,
+        colour = layer_colour,
+        inherit.aes = FALSE
+      )
+  }
+
+  # Step 4: Add indicator values
+  plot <- plot +
+    geom_sf(
+      aes(
+        fill = diversity_val,
+        geometry = geometry
+      ),
+      colour = alpha(grid_line_colour, grid_line_transparency),
+      linewidth = grid_line_width
+    ) +
+    cust_leg(list(
+      trans = trans,
+      breaks = breaks,
+      labels = labels,
+      limits = legend_limits
+    )) +
+    theme_bw() +
+    theme(
+      panel.background = element_rect(fill = ocean_fill_colour),
+      legend.text = ggplot2::element_text(),
+      strip.text = ggplot2::element_text(face = "italic"),
+      plot.title = ggplot2::element_text(face = title_face)
+    ) +
+    # Wrap legend title if longer than user-specified wrap length
+    labs(fill = wrapper(
+      legend_title %||% leg_label_default,
+      legend_title_wrap_length
+    )) +
+    if (suppress_legend) theme(legend.position = "none")
+
+  # Step 5: Re-create lines from layers
+  # This ensures that indicator values are plotted on top of layer fill (e.g.,
+  # oceans and lakes) but lines are still visible.
+  for (i in names(layer_list)) {
+    layer_data <- layer_list[[i]]
+    plot <- plot +
+      ggplot2::geom_sf(
+        data = layer_data,
+        aes(geometry = geometry),
+        fill = "transparent",
+        colour = get_layer_colour(i, layer_colours, "black"),
+        inherit.aes = FALSE
+      )
+  }
+
+
+  # Step 7: Expand the plot if crop_to_grid is not set
+  expand_val <- if (crop_to_grid) FALSE else TRUE
+  plot <- plot +
+    coord_sf(
+      crs = projection,
+      xlim = c(
+        map_lims["xmin"],
+        map_lims["xmax"]
+      ),
+      ylim = c(
+        map_lims["ymin"],
+        map_lims["ymax"]
+      ),
+      expand = expand_val
+    )
+
+  # Step 8: Add title
+  if (!is.null(title_label)) {
+    plot <- plot + ggplot2::labs(title = title_label)
+  }
+
+  if (visible_panel_gridlines != TRUE) {
+    plot <- plot + ggplot2::theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+  }
+
+  # Exit function
+  return(plot)
+}

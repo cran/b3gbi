@@ -1,0 +1,156 @@
+test_that("get_ne_data retrieves map data correctly", {
+  skip_on_cran()
+  # Use real get_ne_data for this test only
+  Sys.unsetenv("B3GBI_TESTING")
+  on.exit(Sys.setenv(B3GBI_TESTING = "TRUE"))
+
+  # Test country level
+  france_map <- get_ne_data(latlong_bbox = c(xmin = 10, ymin = 40, xmax = 12, ymax = 42),
+                            projected_crs = "EPSG:3857",
+                            region = "France",
+                            level = "country",
+                            ne_type = "countries",
+                            ne_scale = "medium")
+  expect_s3_class(france_map[[1]], "sf")
+  expect_equal(sf::st_crs(france_map[[1]]), sf::st_crs("EPSG:3857"))
+
+  # Test continent level
+  africa_map <- get_ne_data(latlong_bbox <- c(xmin = 10, ymin = 40, xmax = 12, ymax = 42),
+                            projected_crs = "EPSG:3857",
+                            region = "Africa",
+                            level = "continent",
+                            ne_type = "countries",
+                            ne_scale = "medium")
+  expect_s3_class(africa_map[[2]], "sf")
+  expect_equal(sf::st_crs(africa_map[[2]]), sf::st_crs("EPSG:3857"))
+
+  # Test world level
+  world_map <- get_ne_data(latlong_bbox <- c(xmin = 10, ymin = 40, xmax = 12, ymax = 42),
+                           projected_crs = "EPSG:3857",
+                           region = NULL,
+                           level = "world",
+                           ne_type = "countries",
+                           ne_scale = "medium")
+  expect_s3_class(world_map[[1]], "sf")
+  expect_equal(sf::st_crs(world_map[[1]]), sf::st_crs("EPSG:3857"))
+
+  # Test sovereignty level
+  sovereignty_map <- get_ne_data(latlong_bbox <- c(xmin = 10, ymin = 40, xmax = 12, ymax = 42),
+                                 projected_crs = "EPSG:3857",
+                                 region = "United States of America",
+                                 level = "sovereignty",
+                                 ne_type = "sovereignty",
+                                 ne_scale = "medium")
+  expect_s3_class(sovereignty_map[[2]], "sf")
+
+  # Test geounit level
+  geounit_map <- get_ne_data(latlong_bbox <- c(xmin = 10, ymin = 40, xmax = 12, ymax = 42),
+                             projected_crs = "EPSG:3857",
+                             region = "Germany",
+                             level = "geounit",
+                             ne_type = "map_units",
+                             ne_scale = "medium")
+  expect_s3_class(geounit_map[[1]], "sf")
+
+  # Test tiny_countries
+  tiny_countries_map <- get_ne_data(latlong_bbox <- c(xmin = 10, ymin = 40, xmax = 12, ymax = 42),
+                                    projected_crs = "EPSG:3857",
+                                    region = "France",
+                                    level = "country",
+                                    ne_type = "tiny_countries",
+                                    ne_scale = "medium")
+  expect_s3_class(tiny_countries_map[[2]], "sf")
+
+  # test multiple level ne_type combinations.
+  sovereignty_tiny_map <- get_ne_data(latlong_bbox <- c(xmin = 10, ymin = 40, xmax = 12, ymax = 42),
+                                      projected_crs = "EPSG:3857",
+                                      region = "United States of America",
+                                      level = "sovereignty",
+                                      ne_type = "tiny_countries",
+                                      ne_scale = "medium")
+  expect_s3_class(sovereignty_tiny_map[[1]], "sf")
+})
+
+test_that("get_ne_data handles edge cases", {
+  # Test different ne_scale
+  france_map_small <- get_ne_data(latlong_bbox <- c(xmin = 10, ymin = 40, xmax = 12, ymax = 42),
+                                  projected_crs = "EPSG:3857",
+                                  region = "France",
+                                  level = "country",
+                                  ne_type = "countries",
+                                  ne_scale = "small")
+  expect_s3_class(france_map_small[[2]], "sf")
+
+  # Test different region
+  germany_map <- get_ne_data(latlong_bbox <- c(xmin = 10, ymin = 40, xmax = 12, ymax = 42),
+                             projected_crs = "EPSG:3857",
+                             region = "Germany",
+                             level = "country",
+                             ne_type = "countries",
+                             ne_scale = "medium")
+  expect_s3_class(germany_map[[1]], "sf")
+})
+
+test_that("get_ne_data cube level triggers st_crop branch", {
+  # Use the fast mock from setup.R (B3GBI_TESTING=TRUE)
+  cube_map <- get_ne_data(latlong_bbox = c(xmin = 10, ymin = 40, xmax = 12, ymax = 42),
+                          projected_crs = "EPSG:3857",
+                          region = NULL,
+                          level = "cube",
+                          ne_type = "countries",
+                          ne_scale = "medium")
+  expect_s3_class(cube_map[[1]], "sf")
+})
+
+test_that("get_ne_data handles errors", {
+  # Need real function for error validation tests
+  Sys.unsetenv("B3GBI_TESTING")
+  on.exit(Sys.setenv(B3GBI_TESTING = "TRUE"))
+  bbox_val <- c(xmin = 10, ymin = 40, xmax = 12, ymax = 42)
+
+  # Test invalid level
+  expect_error(get_ne_data(latlong_bbox = bbox_val,
+                           projected_crs = "EPSG:3857",
+                           region = "France",
+                           level = "invalid",
+                           ne_type = "countries",
+                           ne_scale = "medium"))
+
+  # Test that when region is NULL and level is not cube/world we get an error
+  for (lvl in c("country", "continent", "sovereignty", "geounit")) {
+    expect_error(
+      get_ne_data(
+        latlong_bbox = bbox_val,
+        projected_crs = "EPSG:3857",
+        region = NULL,
+        level = lvl,
+        ne_type = "countries",
+        ne_scale = "medium"
+      ),
+      regexp = "region",
+      info = paste("level =", lvl)
+    )
+  }
+
+  expect_error(
+    get_ne_data(latlong_bbox = bbox_val,
+                projected_crs = "EPSG:3857",
+                region = NULL,
+                level = "country",
+                ne_type = "tiny_countries",
+                ne_scale = "medium"),
+    regexp = "region"
+  )
+
+  # Test for error when projected_crs is null
+  expect_error(
+    get_ne_data(projected_crs = NULL,
+                latlong_bbox = bbox_val,
+                region = "Germany",
+                level = "country",
+                ne_type = "countries",
+                ne_scale = "medium"),
+    regexp = "CRS"
+  )
+
+})
